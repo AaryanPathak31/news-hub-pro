@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useArticles, useDeleteArticle, DBArticle } from '@/hooks/useArticles';
@@ -24,11 +24,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit2, Trash2, Eye, LogOut, FileText, Send, Archive, BarChart3, Users, Sparkles } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Plus, Edit2, Trash2, Eye, LogOut, FileText, Send, Archive, BarChart3, Users, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
-import AnalyticsDashboard from '@/components/admin/AnalyticsDashboard';
-import UserManagement from '@/components/admin/UserManagement';
-import { AINewsGenerator } from '@/components/admin/AINewsGenerator';
+
+// Lazy load heavy components
+const AnalyticsDashboard = lazy(() => import('@/components/admin/AnalyticsDashboard'));
+const UserManagement = lazy(() => import('@/components/admin/UserManagement'));
+const AINewsGenerator = lazy(() => import('@/components/admin/AINewsGenerator').then(m => ({ default: m.AINewsGenerator })));
+
+const ARTICLES_PER_PAGE = 20;
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -37,6 +42,7 @@ const Admin = () => {
   const deleteArticle = useDeleteArticle();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('articles');
+  const [currentPage, setCurrentPage] = useState(1);
 
   if (loading) {
     return (
@@ -95,68 +101,121 @@ const Admin = () => {
     }
   };
 
-  const ArticleTable = ({ articles }: { articles: DBArticle[] }) => (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Title</TableHead>
-          <TableHead>Category</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Date</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {articles.length === 0 ? (
-          <TableRow>
-            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-              No articles found
-            </TableCell>
-          </TableRow>
-        ) : (
-          articles.map((article) => (
-            <TableRow key={article.id}>
-              <TableCell className="font-medium max-w-xs truncate">
-                {article.title}
-              </TableCell>
-              <TableCell>{article.category?.name || '-'}</TableCell>
-              <TableCell>{getStatusBadge(article.status)}</TableCell>
-              <TableCell>
-                {format(new Date(article.created_at), 'MMM d, yyyy')}
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-2">
-                  {article.status === 'published' && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => window.open(`/${article.category?.slug}/${article.slug}`, '_blank')}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => navigate(`/admin/edit/${article.id}`)}
-                  >
-                    <Edit2 className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive"
-                    onClick={() => setDeleteId(article.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
+  // Pagination logic
+  const paginateArticles = (articleList: DBArticle[]) => {
+    const startIndex = (currentPage - 1) * ARTICLES_PER_PAGE;
+    const endIndex = startIndex + ARTICLES_PER_PAGE;
+    return articleList.slice(startIndex, endIndex);
+  };
+
+  const getTotalPages = (articleList: DBArticle[]) => Math.ceil(articleList.length / ARTICLES_PER_PAGE);
+
+  const ArticleTable = ({ articles: articleList, showPagination = true }: { articles: DBArticle[]; showPagination?: boolean }) => {
+    const displayArticles = showPagination ? paginateArticles(articleList) : articleList;
+    const totalPages = getTotalPages(articleList);
+
+    return (
+      <div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
-          ))
+          </TableHeader>
+          <TableBody>
+            {displayArticles.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  No articles found
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayArticles.map((article) => (
+                <TableRow key={article.id}>
+                  <TableCell className="font-medium max-w-xs truncate">
+                    {article.title}
+                  </TableCell>
+                  <TableCell>{article.category?.name || '-'}</TableCell>
+                  <TableCell>{getStatusBadge(article.status)}</TableCell>
+                  <TableCell>
+                    {format(new Date(article.created_at), 'MMM d, yyyy')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {article.status === 'published' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => window.open(`/${article.category?.slug}/${article.slug}`, '_blank')}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => navigate(`/admin/edit/${article.id}`)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive"
+                        onClick={() => setDeleteId(article.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+
+        {/* Pagination */}
+        {showPagination && totalPages > 1 && (
+          <div className="flex items-center justify-between mt-4 px-2">
+            <p className="text-sm text-muted-foreground">
+              Showing {((currentPage - 1) * ARTICLES_PER_PAGE) + 1} - {Math.min(currentPage * ARTICLES_PER_PAGE, articleList.length)} of {articleList.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         )}
-      </TableBody>
-    </Table>
+      </div>
+    );
+  };
+
+  const LoadingFallback = () => (
+    <div className="space-y-4 p-6">
+      <Skeleton className="h-8 w-1/3" />
+      <Skeleton className="h-64 w-full" />
+    </div>
   );
 
   return (
@@ -182,7 +241,7 @@ const Admin = () => {
 
       <main className="container py-8">
         {/* Main Navigation Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setCurrentPage(1); }} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-flex">
             <TabsTrigger value="articles" className="gap-2">
               <FileText className="h-4 w-4" />
@@ -260,11 +319,13 @@ const Admin = () => {
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="flex justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
                   </div>
                 ) : (
-                  <Tabs defaultValue="all">
+                  <Tabs defaultValue="all" onValueChange={() => setCurrentPage(1)}>
                     <TabsList>
                       <TabsTrigger value="all">All ({articles?.length || 0})</TabsTrigger>
                       <TabsTrigger value="published">Published ({publishedArticles.length})</TabsTrigger>
@@ -289,20 +350,26 @@ const Admin = () => {
             </Card>
           </TabsContent>
 
-          {/* AI Generator Tab */}
+          {/* AI Generator Tab - Lazy Loaded */}
           <TabsContent value="ai-generator">
-            <AINewsGenerator />
+            <Suspense fallback={<LoadingFallback />}>
+              <AINewsGenerator />
+            </Suspense>
           </TabsContent>
 
-          {/* Analytics Tab */}
+          {/* Analytics Tab - Lazy Loaded */}
           <TabsContent value="analytics">
-            <AnalyticsDashboard articles={articles || []} />
+            <Suspense fallback={<LoadingFallback />}>
+              <AnalyticsDashboard articles={articles || []} />
+            </Suspense>
           </TabsContent>
 
-          {/* Users Tab (Admin only) */}
+          {/* Users Tab (Admin only) - Lazy Loaded */}
           {isAdmin && (
             <TabsContent value="users">
-              <UserManagement />
+              <Suspense fallback={<LoadingFallback />}>
+                <UserManagement />
+              </Suspense>
             </TabsContent>
           )}
         </Tabs>

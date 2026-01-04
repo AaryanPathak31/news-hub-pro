@@ -6,9 +6,11 @@ import { TrendingSidebar } from '@/components/news/TrendingSidebar';
 import { BreakingNewsTicker } from '@/components/news/BreakingNewsTicker';
 import { AdPlaceholder } from '@/components/news/AdPlaceholder';
 import { usePublishedArticles, useCategories, DBArticle } from '@/hooks/useArticles';
+import { useBreakingNotifications } from '@/hooks/useBreakingNotifications';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { AlertCircle } from 'lucide-react';
+import { ArticleGridSkeleton, ArticleCardSkeleton } from '@/components/ui/skeleton';
+import { AlertCircle, Bell, BellOff } from 'lucide-react';
 import {
   generateHomeSEO,
   generateWebsiteSchema,
@@ -51,10 +53,20 @@ const Index = () => {
 
   const articles = dbArticles?.map(toArticle) || [];
 
-  // Breaking news - sorted by most recent first (auto-ranking)
+  // Breaking news - sorted by most recent first
   const breakingNews = articles
     .filter((a) => a.isBreaking)
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+  // Push notifications for breaking news
+  const { requestPermission, permissionStatus, isSupported } = useBreakingNotifications(
+    breakingNews.map((a) => ({
+      id: a.id,
+      title: a.title,
+      slug: a.slug,
+      category: { slug: a.category },
+    }))
+  );
 
   const featuredArticles = articles.filter((a) => a.isFeatured);
   const trendingArticles = [...articles].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
@@ -73,12 +85,22 @@ const Index = () => {
 
   const structuredData = [generateWebsiteSchema(), generateOrganizationSchema()];
 
+  // Loading state with skeletons
   if (isLoading && !dbArticles) {
     return (
       <Layout>
-        <div className="container py-20 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground">Loading news...</p>
+        <div className="container py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="lg:col-span-2">
+              <ArticleCardSkeleton variant="featured" />
+            </div>
+            <div className="space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <ArticleCardSkeleton key={i} variant="horizontal" />
+              ))}
+            </div>
+          </div>
+          <ArticleGridSkeleton count={4} />
         </div>
       </Layout>
     );
@@ -94,7 +116,7 @@ const Index = () => {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>News service is not responding</AlertTitle>
               <AlertDescription>
-                <p>We can’t load news right now. Please try again in a moment.</p>
+                <p>We can't load news right now. Please try again in a moment.</p>
                 <div className="mt-4 flex gap-2">
                   <Button onClick={() => { refetchArticles(); refetchCategories(); }}>Retry</Button>
                   <Button variant="outline" asChild>
@@ -151,12 +173,38 @@ const Index = () => {
           </div>
         )}
 
-        {/* Breaking News Ticker - shows all breaking news, ranked by recency */}
+        {/* Breaking News Ticker */}
         {breakingNews.length > 0 && <BreakingNewsTicker articles={breakingNews} />}
 
-        {/* Header Ad */}
-        <div className="container mt-4">
-          <AdPlaceholder variant="leaderboard" className="w-full max-w-4xl mx-auto" />
+        {/* Header Ad + Notification Button */}
+        <div className="container mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <AdPlaceholder variant="leaderboard" className="w-full max-w-4xl" />
+          
+          {/* Push Notification Button */}
+          {isSupported && permissionStatus !== 'granted' && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-shrink-0"
+              onClick={async () => {
+                const result = await requestPermission();
+                if (result === 'granted') {
+                  // Notification enabled
+                } else if (result === 'denied') {
+                  // User denied
+                }
+              }}
+            >
+              <Bell className="h-4 w-4 mr-2" />
+              Get Breaking News Alerts
+            </Button>
+          )}
+          {isSupported && permissionStatus === 'granted' && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Bell className="h-4 w-4 text-primary" />
+              Alerts enabled
+            </div>
+          )}
         </div>
 
         {/* Breaking News Section */}
@@ -179,10 +227,7 @@ const Index = () => {
         {/* Featured Section */}
         <section className="container mt-8" aria-label="Featured news">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Featured Article */}
             <div className="lg:col-span-2">{(featuredArticles[0] || latestArticles[0]) && <ArticleCard article={featuredArticles[0] || latestArticles[0]} variant="featured" />}</div>
-
-            {/* Trending Sidebar */}
             <div>
               <TrendingSidebar articles={trendingArticles.length > 0 ? trendingArticles : latestArticles.slice(0, 5)} />
             </div>
@@ -213,7 +258,6 @@ const Index = () => {
           {technologyArticles.length > 0 && <CategorySection category="technology" articles={technologyArticles} />}
           {politicsArticles.length > 0 && <CategorySection category="politics" articles={politicsArticles} />}
 
-          {/* Mid-page Ad */}
           <AdPlaceholder variant="banner" className="w-full my-8" />
 
           {sportsArticles.length > 0 && <CategorySection category="sports" articles={sportsArticles} />}
@@ -265,4 +309,3 @@ const Index = () => {
 };
 
 export default Index;
-
