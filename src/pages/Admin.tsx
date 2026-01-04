@@ -24,15 +24,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit2, Trash2, Eye, LogOut, FileText, Send, Archive } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, LogOut, FileText, Send, Archive, BarChart3, Users } from 'lucide-react';
 import { format } from 'date-fns';
+import AnalyticsDashboard from '@/components/admin/AnalyticsDashboard';
+import UserManagement from '@/components/admin/UserManagement';
 
 const Admin = () => {
   const navigate = useNavigate();
-  const { user, isEditor, loading, signOut } = useAuth();
+  const { user, isAdmin, isEditor, loading, signOut } = useAuth();
   const { data: articles, isLoading } = useArticles();
   const deleteArticle = useDeleteArticle();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('articles');
 
   if (loading) {
     return (
@@ -177,87 +180,122 @@ const Admin = () => {
       </header>
 
       <main className="container py-8">
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-secondary rounded-full">
-                  <FileText className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{draftArticles.length}</p>
-                  <p className="text-muted-foreground">Drafts</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-green-100 rounded-full">
-                  <Send className="h-6 w-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{publishedArticles.length}</p>
-                  <p className="text-muted-foreground">Published</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-muted rounded-full">
-                  <Archive className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{archivedArticles.length}</p>
-                  <p className="text-muted-foreground">Archived</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Articles */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Articles</CardTitle>
-            <Button onClick={() => navigate('/admin/new')}>
-              <Plus className="h-4 w-4 mr-2" />
-              New Article
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
-            ) : (
-              <Tabs defaultValue="all">
-                <TabsList>
-                  <TabsTrigger value="all">All ({articles?.length || 0})</TabsTrigger>
-                  <TabsTrigger value="published">Published ({publishedArticles.length})</TabsTrigger>
-                  <TabsTrigger value="drafts">Drafts ({draftArticles.length})</TabsTrigger>
-                  <TabsTrigger value="archived">Archived ({archivedArticles.length})</TabsTrigger>
-                </TabsList>
-                <TabsContent value="all" className="mt-4">
-                  <ArticleTable articles={articles || []} />
-                </TabsContent>
-                <TabsContent value="published" className="mt-4">
-                  <ArticleTable articles={publishedArticles} />
-                </TabsContent>
-                <TabsContent value="drafts" className="mt-4">
-                  <ArticleTable articles={draftArticles} />
-                </TabsContent>
-                <TabsContent value="archived" className="mt-4">
-                  <ArticleTable articles={archivedArticles} />
-                </TabsContent>
-              </Tabs>
+        {/* Main Navigation Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-flex">
+            <TabsTrigger value="articles" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Articles
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Analytics
+            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="users" className="gap-2">
+                <Users className="h-4 w-4" />
+                Users
+              </TabsTrigger>
             )}
-          </CardContent>
-        </Card>
+          </TabsList>
+
+          {/* Articles Tab */}
+          <TabsContent value="articles" className="space-y-6">
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-secondary rounded-full">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{draftArticles.length}</p>
+                      <p className="text-muted-foreground">Drafts</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-green-100 rounded-full">
+                      <Send className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{publishedArticles.length}</p>
+                      <p className="text-muted-foreground">Published</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-muted rounded-full">
+                      <Archive className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{archivedArticles.length}</p>
+                      <p className="text-muted-foreground">Archived</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Articles Table */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Articles</CardTitle>
+                <Button onClick={() => navigate('/admin/new')}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Article
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : (
+                  <Tabs defaultValue="all">
+                    <TabsList>
+                      <TabsTrigger value="all">All ({articles?.length || 0})</TabsTrigger>
+                      <TabsTrigger value="published">Published ({publishedArticles.length})</TabsTrigger>
+                      <TabsTrigger value="drafts">Drafts ({draftArticles.length})</TabsTrigger>
+                      <TabsTrigger value="archived">Archived ({archivedArticles.length})</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="all" className="mt-4">
+                      <ArticleTable articles={articles || []} />
+                    </TabsContent>
+                    <TabsContent value="published" className="mt-4">
+                      <ArticleTable articles={publishedArticles} />
+                    </TabsContent>
+                    <TabsContent value="drafts" className="mt-4">
+                      <ArticleTable articles={draftArticles} />
+                    </TabsContent>
+                    <TabsContent value="archived" className="mt-4">
+                      <ArticleTable articles={archivedArticles} />
+                    </TabsContent>
+                  </Tabs>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics">
+            <AnalyticsDashboard articles={articles || []} />
+          </TabsContent>
+
+          {/* Users Tab (Admin only) */}
+          {isAdmin && (
+            <TabsContent value="users">
+              <UserManagement />
+            </TabsContent>
+          )}
+        </Tabs>
       </main>
 
       {/* Delete Confirmation */}
