@@ -1,8 +1,13 @@
+# NoNameNews Sitemap
+# https://nonamenews.com/sitemap.xml
+
 User-agent: Googlebot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Bingbot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Twitterbot
 Allow: /
@@ -12,3 +17,22 @@ Allow: /
 
 User-agent: *
 Allow: /
+Crawl-delay: 1
+
+# Sitemaps
+Sitemap: https://nonamenews.com/sitemap.xml
+Sitemap: https://nonamenews.com/news-sitemap.xml
+
+# Disallow admin pages
+Disallow: /admin/
+Disallow: /api/
+
+# Allow all news content
+Allow: /breaking/
+Allow: /world/
+Allow: /politics/
+Allow: /technology/
+Allow: /business/
+Allow: /sports/
+Allow: /entertainment/
+Allow: /health/
