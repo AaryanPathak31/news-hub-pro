@@ -5,13 +5,37 @@ import { ArticleCard } from '@/components/news/ArticleCard';
 import { Breadcrumb } from '@/components/news/Breadcrumb';
 import { TrendingSidebar } from '@/components/news/TrendingSidebar';
 import { AdPlaceholder } from '@/components/news/AdPlaceholder';
-import { getArticlesByCategory, getTrendingArticles } from '@/data/mockArticles';
+import { usePublishedArticles, DBArticle } from '@/hooks/useArticles';
 import { generateCategorySEO, generateBreadcrumbSchema } from '@/lib/seo';
-import { getCategoryInfo, CATEGORIES, Category } from '@/types/news';
+import { getCategoryInfo, CATEGORIES, Category, Article } from '@/types/news';
 import NotFound from './NotFound';
+
+// Helper to convert DB article to frontend Article type
+const toArticle = (dbArticle: DBArticle): Article => ({
+  id: dbArticle.id,
+  slug: dbArticle.slug,
+  title: dbArticle.title,
+  excerpt: dbArticle.excerpt || '',
+  content: dbArticle.content,
+  featuredImage: dbArticle.featured_image || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop',
+  category: (dbArticle.category?.slug || 'world') as Category,
+  tags: dbArticle.tags || [],
+  author: {
+    id: dbArticle.author_id || '1',
+    name: dbArticle.author_profile?.full_name || 'Staff Writer',
+    role: 'Reporter'
+  },
+  publishedAt: dbArticle.published_at || dbArticle.created_at,
+  updatedAt: dbArticle.updated_at,
+  readingTime: dbArticle.read_time,
+  isBreaking: dbArticle.is_breaking,
+  isFeatured: dbArticle.is_featured,
+  views: dbArticle.view_count
+});
 
 const CategoryPage = () => {
   const { category } = useParams<{ category: string }>();
+  const { data: allArticles, isLoading } = usePublishedArticles();
   
   const isValidCategory = CATEGORIES.some(c => c.slug === category);
   
@@ -20,8 +44,10 @@ const CategoryPage = () => {
   }
 
   const categoryInfo = getCategoryInfo(category as Category);
-  const articles = getArticlesByCategory(category);
-  const trendingArticles = getTrendingArticles(5);
+  const articles = allArticles?.map(toArticle).filter(a => a.category === category) || [];
+  const trendingArticles = allArticles?.map(toArticle)
+    .sort((a, b) => (b.views || 0) - (a.views || 0))
+    .slice(0, 5) || [];
 
   const seo = generateCategorySEO(categoryInfo);
   const breadcrumbSchema = generateBreadcrumbSchema([
@@ -30,6 +56,16 @@ const CategoryPage = () => {
   ]);
 
   const [featuredArticle, ...restArticles] = articles;
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="container py-20 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <>
@@ -67,19 +103,20 @@ const CategoryPage = () => {
               {/* Article List */}
               <div className="space-y-6">
                 {restArticles.map((article, index) => (
-                  <>
-                    <ArticleCard key={article.id} article={article} variant="horizontal" />
+                  <div key={article.id}>
+                    <ArticleCard article={article} variant="horizontal" />
                     {/* Insert ad every 4 articles */}
                     {(index + 1) % 4 === 0 && index < restArticles.length - 1 && (
-                      <AdPlaceholder key={`ad-${index}`} variant="inline" className="w-full" />
+                      <AdPlaceholder variant="inline" className="w-full mt-6" />
                     )}
-                  </>
+                  </div>
                 ))}
               </div>
 
               {articles.length === 0 && (
                 <div className="text-center py-12">
-                  <p className="text-lg text-muted-foreground">No articles found in this category.</p>
+                  <p className="text-lg text-muted-foreground">No articles found in this category yet.</p>
+                  <p className="text-sm text-muted-foreground mt-2">Check back soon for the latest {categoryInfo.name.toLowerCase()} news!</p>
                 </div>
               )}
             </div>
@@ -87,7 +124,7 @@ const CategoryPage = () => {
             {/* Sidebar */}
             <aside className="space-y-6">
               <div className="sticky top-24 space-y-6">
-                <TrendingSidebar articles={trendingArticles} />
+                {trendingArticles.length > 0 && <TrendingSidebar articles={trendingArticles} />}
                 <AdPlaceholder variant="sidebar" />
               </div>
             </aside>

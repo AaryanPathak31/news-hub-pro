@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Menu, X } from 'lucide-react';
+import { Search, Menu, X, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CATEGORIES } from '@/types/news';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 export const Header = () => {
+  const { user, isEditor } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
@@ -26,8 +28,18 @@ export const Header = () => {
             })}
           </span>
           <div className="flex items-center gap-4 ml-auto">
-            <Link to="/subscribe" className="hover:underline">Subscribe</Link>
-            <Link to="/newsletter" className="hover:underline">Newsletter</Link>
+            <Link to="/subscribe" className="hover:underline hidden sm:block">Subscribe</Link>
+            <Link to="/newsletter" className="hover:underline hidden sm:block">Newsletter</Link>
+            {isEditor ? (
+              <Link to="/admin" className="hover:underline flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Admin
+              </Link>
+            ) : user ? (
+              <Link to="/admin" className="hover:underline">Dashboard</Link>
+            ) : (
+              <Link to="/auth" className="hover:underline">Login</Link>
+            )}
           </div>
         </div>
       </div>

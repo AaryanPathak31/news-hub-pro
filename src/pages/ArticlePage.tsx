@@ -7,25 +7,68 @@ import { ShareButtons } from '@/components/news/ShareButtons';
 import { TrendingSidebar } from '@/components/news/TrendingSidebar';
 import { AdPlaceholder } from '@/components/news/AdPlaceholder';
 import { CategoryBadge } from '@/components/news/CategoryBadge';
-import { getArticleBySlug, getRelatedArticles, getTrendingArticles } from '@/data/mockArticles';
+import { useArticleBySlug, usePublishedArticles, DBArticle } from '@/hooks/useArticles';
 import { generateArticleSEO, generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo';
-import { getCategoryInfo } from '@/types/news';
+import { getCategoryInfo, Article, Category } from '@/types/news';
 import { Clock, Calendar, RefreshCw, User } from 'lucide-react';
 import { format } from 'date-fns';
 import NotFound from './NotFound';
 
+// Helper to convert DB article to frontend Article type
+const toArticle = (dbArticle: DBArticle): Article => ({
+  id: dbArticle.id,
+  slug: dbArticle.slug,
+  title: dbArticle.title,
+  excerpt: dbArticle.excerpt || '',
+  content: dbArticle.content,
+  featuredImage: dbArticle.featured_image || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop',
+  category: (dbArticle.category?.slug || 'world') as Category,
+  tags: dbArticle.tags || [],
+  author: {
+    id: dbArticle.author_id || '1',
+    name: dbArticle.author_profile?.full_name || 'Staff Writer',
+    role: 'Reporter'
+  },
+  publishedAt: dbArticle.published_at || dbArticle.created_at,
+  updatedAt: dbArticle.updated_at,
+  readingTime: dbArticle.read_time,
+  isBreaking: dbArticle.is_breaking,
+  isFeatured: dbArticle.is_featured,
+  views: dbArticle.view_count
+});
+
 const ArticlePage = () => {
   const { category, slug } = useParams<{ category: string; slug: string }>();
   
-  const article = slug ? getArticleBySlug(slug) : undefined;
+  const { data: dbArticle, isLoading } = useArticleBySlug(slug || '');
+  const { data: allArticles } = usePublishedArticles();
 
-  if (!article) {
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="container py-20 text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!dbArticle) {
     return <NotFound />;
   }
 
+  const article = toArticle(dbArticle);
+  const articles = allArticles?.map(toArticle) || [];
+  
+  const relatedArticles = articles
+    .filter(a => a.id !== article.id && (a.category === article.category || a.tags.some(tag => article.tags.includes(tag))))
+    .slice(0, 4);
+  
+  const trendingArticles = [...articles]
+    .sort((a, b) => (b.views || 0) - (a.views || 0))
+    .slice(0, 5);
+
   const categoryInfo = getCategoryInfo(article.category);
-  const relatedArticles = getRelatedArticles(article, 4);
-  const trendingArticles = getTrendingArticles(5);
   
   const seo = generateArticleSEO(article);
   const articleSchema = generateNewsArticleSchema(article);
@@ -181,7 +224,7 @@ const ArticlePage = () => {
             {/* Sidebar */}
             <aside className="space-y-6">
               <div className="sticky top-24 space-y-6">
-                <TrendingSidebar articles={trendingArticles} />
+                {trendingArticles.length > 0 && <TrendingSidebar articles={trendingArticles} />}
                 <AdPlaceholder variant="sidebar" />
               </div>
             </aside>
