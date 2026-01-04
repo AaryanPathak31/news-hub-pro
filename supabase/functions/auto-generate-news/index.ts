@@ -82,15 +82,15 @@ serve(async (req) => {
       );
     }
 
-    // supabase client already created above
-
-    const { categoryIds, categoryNames, count = 2, language = "en" } = await req.json();
+    const body = await req.json();
+    const { categoryIds, categoryNames, count = 2, language = "en", rssOnly = false } = body;
 
     // Support both single category (legacy) and multiple categories
     const categories = categoryIds || [];
     const names = categoryNames || [];
     
-    console.log(`Auto-generating ${count} article(s) for categories: ${names.join(', ')} in ${language}`);
+    const mode = rssOnly ? "RSS-only" : "AI";
+    console.log(`Auto-generating ${count} article(s) for categories: ${names.join(', ')} in ${language} [${mode} mode]`);
 
     // First, demote existing breaking news (older than 15 minutes)
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
@@ -131,34 +131,51 @@ serve(async (req) => {
     }
 
     const generatedArticles = [];
+    let useRssOnlyFallback = rssOnly;
 
     for (const newsItem of news) {
       try {
         console.log(`Processing: ${newsItem.title}`);
 
-        // Step 2: Rewrite the article using AI with SEO optimization
-        const rewriteResponse = await fetch(`${supabaseUrl}/functions/v1/rewrite-article`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({
-            title: newsItem.title,
-            description: newsItem.description,
-            source: newsItem.source,
-            language: language,
-            optimizeSEO: true,
-          }),
-        });
+        let rewritten: { title: string; content: string; excerpt: string; seoKeywords?: string[]; imagePrompt?: string };
+        
+        if (useRssOnlyFallback) {
+          // RSS-only mode: no AI calls, use RSS content directly
+          rewritten = createRssOnlyArticle(newsItem, names);
+          console.log("Using RSS-only mode (no AI)");
+        } else {
+          // Try AI rewriting
+          const rewriteResponse = await fetch(`${supabaseUrl}/functions/v1/rewrite-article`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              title: newsItem.title,
+              description: newsItem.description,
+              source: newsItem.source,
+              language: language,
+              optimizeSEO: true,
+            }),
+          });
 
-        if (!rewriteResponse.ok) {
-          const error = await rewriteResponse.json();
-          console.error("Rewrite failed:", error);
-          continue;
+          if (!rewriteResponse.ok) {
+            const errorStatus = rewriteResponse.status;
+            console.error(`Rewrite failed with status ${errorStatus}`);
+            
+            // Auto-fallback to RSS-only if credits exhausted or rate limited
+            if (errorStatus === 402 || errorStatus === 429) {
+              console.log(`AI credits exhausted/rate limited (${errorStatus}). Switching to RSS-only mode for remaining articles.`);
+              useRssOnlyFallback = true;
+              rewritten = createRssOnlyArticle(newsItem, names);
+            } else {
+              continue;
+            }
+          } else {
+            rewritten = await rewriteResponse.json();
+          }
         }
-
-        const rewritten = await rewriteResponse.json();
         
         // Generate SEO-optimized slug
         const slug = rewritten.title
@@ -167,25 +184,36 @@ serve(async (req) => {
           .replace(/^-|-$/g, '')
           .substring(0, 100) + '-' + Date.now();
 
-        // Step 3: Generate image
-        const imageResponse = await fetch(`${supabaseUrl}/functions/v1/generate-news-image`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({
-            prompt: rewritten.imagePrompt || rewritten.title,
-            articleSlug: slug,
-          }),
-        });
-
+        // Step 3: Generate image (skip if RSS-only to save credits)
         let imageUrl = "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop";
         
-        if (imageResponse.ok) {
-          const imageData = await imageResponse.json();
-          imageUrl = imageData.imageUrl || imageUrl;
-          console.log(`Image generated: ${imageData.placeholder ? 'placeholder' : 'AI generated'}`);
+        if (!useRssOnlyFallback) {
+          const imageResponse = await fetch(`${supabaseUrl}/functions/v1/generate-news-image`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              prompt: rewritten.imagePrompt || rewritten.title,
+              articleSlug: slug,
+            }),
+          });
+          
+          if (imageResponse.ok) {
+            const imageData = await imageResponse.json();
+            const rawUrl = imageData.imageUrl;
+            
+            // Never store base64 images - they break page loads
+            if (rawUrl && typeof rawUrl === "string" && !rawUrl.startsWith("data:image")) {
+              imageUrl = rawUrl;
+              console.log(`Image generated: ${imageData.placeholder ? 'placeholder' : 'AI generated'}`);
+            } else if (rawUrl?.startsWith("data:image")) {
+              console.log("Received base64 image, using placeholder instead");
+            }
+          } else if (imageResponse.status === 402 || imageResponse.status === 429) {
+            console.log("Image generation credits exhausted, using placeholder");
+          }
         }
 
         // Step 4: Insert into database - ALL new articles are breaking news
@@ -214,11 +242,11 @@ serve(async (req) => {
           continue;
         }
 
-        console.log(`Article created as BREAKING: ${article.id}`);
+        console.log(`Article created as BREAKING: ${article.id} [${useRssOnlyFallback ? 'RSS-only' : 'AI'}]`);
         generatedArticles.push(article);
 
         // Add a small delay between articles to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
         console.error(`Error processing news item:`, error);
       }
@@ -227,8 +255,9 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Generated ${generatedArticles.length} breaking article(s)`,
-        articles: generatedArticles 
+        message: `Generated ${generatedArticles.length} breaking article(s) [${useRssOnlyFallback ? 'RSS-only' : 'AI'} mode]`,
+        articles: generatedArticles,
+        mode: useRssOnlyFallback ? 'rss-only' : 'ai'
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -240,3 +269,50 @@ serve(async (req) => {
     );
   }
 });
+
+/**
+ * Create an article from RSS content without AI processing.
+ * This is completely free and doesn't consume any AI credits.
+ */
+function createRssOnlyArticle(
+  newsItem: { title: string; description: string; source: string; link?: string },
+  categoryNames: string[]
+): { title: string; content: string; excerpt: string; seoKeywords: string[] } {
+  const { title, description, source, link } = newsItem;
+  
+  // Clean and format the description
+  const cleanDescription = (description || "")
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+  
+  // Create excerpt (first 200 chars)
+  const excerpt = cleanDescription.substring(0, 200) + (cleanDescription.length > 200 ? '...' : '');
+  
+  // Build article content with source attribution
+  const content = `
+<p>${cleanDescription}</p>
+
+<hr />
+
+<p><em>This article was sourced from ${source}${link ? `. <a href="${link}" target="_blank" rel="noopener noreferrer">Read the original article</a>` : ''}.</em></p>
+  `.trim();
+  
+  // Extract keywords from title
+  const keywords = title
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(word => word.length > 4)
+    .slice(0, 5);
+  
+  return {
+    title: title,
+    content: content,
+    excerpt: excerpt,
+    seoKeywords: [...categoryNames, ...keywords].filter(Boolean),
+  };
+}
