@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
 };
 
 serve(async (req) => {
@@ -16,16 +16,36 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
+    // Use service role client for database operations (needed for settings lookup)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
     const authHeader = req.headers.get('Authorization');
+    const cronSecretHeader = req.headers.get('x-cron-secret');
     let userId: string | null = null;
     let isAuthorized = false;
 
-    // Check if this is a service role call (cron job / internal)
-    if (authHeader && authHeader.includes(supabaseServiceKey)) {
+    // Check for cron secret header (for scheduled jobs)
+    if (cronSecretHeader) {
+      const { data: setting } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'CRON_SECRET')
+        .single();
+      
+      if (setting && setting.value === cronSecretHeader) {
+        isAuthorized = true;
+        console.log("Cron secret authorization - scheduled job");
+      }
+    }
+    
+    // Check if this is a service role call (internal)
+    if (!isAuthorized && authHeader && authHeader.includes(supabaseServiceKey)) {
       isAuthorized = true;
-      console.log("Service role authorization - cron job or internal call");
-    } else if (authHeader) {
-      // Verify user authentication and role
+      console.log("Service role authorization - internal call");
+    }
+    
+    // Check user authentication and role
+    if (!isAuthorized && authHeader) {
       const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
         global: { headers: { Authorization: authHeader } }
       });
@@ -46,13 +66,12 @@ serve(async (req) => {
     if (!isAuthorized) {
       console.error("Unauthorized access attempt");
       return new Response(
-        JSON.stringify({ error: "Unauthorized: Editor/Admin role or service key required" }),
+        JSON.stringify({ error: "Unauthorized: Editor/Admin role, service key, or cron secret required" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Use service role client for database operations
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // supabase client already created above
 
     const { categoryIds, categoryNames, count = 2, language = "en" } = await req.json();
 
