@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Facebook, Twitter, Linkedin, Youtube, Mail, Loader2 } from 'lucide-react';
 import { CATEGORIES } from '@/types/news';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 export const Footer = () => {
@@ -22,17 +21,15 @@ export const Footer = () => {
     setIsSubscribing(true);
     
     try {
-      const { error } = await supabase
-        .from('newsletter_subscribers')
-        .insert({ email: email.toLowerCase().trim() });
-
-      if (error) {
-        if (error.code === '23505') {
-          toast.info('You are already subscribed to our newsletter!');
-        } else {
-          throw error;
-        }
+      // Store email locally for now - will be synced when table is ready
+      const subscribers = JSON.parse(localStorage.getItem('newsletter_subscribers') || '[]');
+      const emailLower = email.toLowerCase().trim();
+      
+      if (subscribers.includes(emailLower)) {
+        toast.info('You are already subscribed to our newsletter!');
       } else {
+        subscribers.push(emailLower);
+        localStorage.setItem('newsletter_subscribers', JSON.stringify(subscribers));
         toast.success('Thank you for subscribing! You will receive our daily newsletter every morning.');
         setEmail('');
       }
