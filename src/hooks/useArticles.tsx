@@ -8,7 +8,6 @@ export interface DBArticle {
   title: string;
   slug: string;
   excerpt: string | null;
-  // NOTE: list queries intentionally omit heavy fields like `content`
   content?: string;
   featured_image: string | null;
   category_id: string | null;
@@ -35,6 +34,7 @@ export interface DBCategory {
 
 const CACHE_PUBLISHED_ARTICLES_KEY = 'nn_cache_published_articles_v1';
 const CACHE_CATEGORIES_KEY = 'nn_cache_categories_v1';
+const CACHE_ARTICLE_PREFIX = 'nn_cache_article_';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const TIMEOUT_MESSAGE = 'Backend is taking too long to respond. Please try again.';
@@ -188,11 +188,16 @@ export const usePublishedArticles = () => {
   });
 };
 
+// Offline-first article cache
 export const useArticleBySlug = (slug: string) => {
+  const cacheKey = `${CACHE_ARTICLE_PREFIX}${slug}`;
+  const cached = slug ? readJSONFromStorage<DBArticle>(cacheKey) : undefined;
+
   return useQuery({
     queryKey: ['article', slug],
     enabled: !!slug,
     retry: 1,
+    ...(cached ? { initialData: cached } : {}),
     queryFn: async () => {
       const { data, error } = await withTimeout(
         supabase
@@ -227,7 +232,12 @@ export const useArticleBySlug = (slug: string) => {
         }
       }
 
-      return { ...data, author_profile } as DBArticle;
+      const result = { ...data, author_profile } as DBArticle;
+      
+      // Cache the article for offline access
+      writeJSONToStorage(cacheKey, result);
+      
+      return result;
     },
   });
 };
@@ -258,6 +268,7 @@ export const useCreateArticle = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
+      queryClient.invalidateQueries({ queryKey: ['published-articles'] });
       toast.success('Article created successfully');
     },
     onError: (error: Error) => {
@@ -278,6 +289,7 @@ export const useUpdateArticle = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
+      queryClient.invalidateQueries({ queryKey: ['published-articles'] });
       toast.success('Article updated successfully');
     },
     onError: (error: Error) => {
@@ -297,6 +309,7 @@ export const useDeleteArticle = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['articles'] });
+      queryClient.invalidateQueries({ queryKey: ['published-articles'] });
       toast.success('Article deleted successfully');
     },
     onError: (error: Error) => {
@@ -327,4 +340,3 @@ export const useUploadImage = () => {
     },
   });
 };
-

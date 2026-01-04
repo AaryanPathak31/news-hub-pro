@@ -21,10 +21,10 @@ export const Footer = () => {
     setIsSubscribing(true);
     
     try {
-      // Store email locally for now - will be synced when table is ready
-      const subscribers = JSON.parse(localStorage.getItem('newsletter_subscribers') || '[]');
       const emailLower = email.toLowerCase().trim();
       
+      // Store in localStorage
+      const subscribers = JSON.parse(localStorage.getItem('newsletter_subscribers') || '[]');
       if (subscribers.includes(emailLower)) {
         toast.info('You are already subscribed to our newsletter!');
       } else {

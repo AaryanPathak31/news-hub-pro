@@ -1,8 +1,9 @@
 export async function withTimeout<T>(
-  promise: Promise<T>,
+  promiseLike: PromiseLike<T>,
   ms = 10_000,
   message = "Request timed out"
 ): Promise<T> {
+  const promise = Promise.resolve(promiseLike);
   let timeoutId: number | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
