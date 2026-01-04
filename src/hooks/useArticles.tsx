@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { readJSONFromStorage, withTimeout, writeJSONToStorage } from '@/lib/async';
 
 export interface DBArticle {
   id: string;
@@ -32,28 +33,67 @@ export interface DBCategory {
   description: string | null;
 }
 
+const CACHE_PUBLISHED_ARTICLES_KEY = 'nn_cache_published_articles_v1';
+const CACHE_CATEGORIES_KEY = 'nn_cache_categories_v1';
+
+const REQUEST_TIMEOUT_MS = 10_000;
+const TIMEOUT_MESSAGE = 'Backend is taking too long to respond. Please try again.';
+
 export const useCategories = () => {
+  const cached = readJSONFromStorage<DBCategory[]>(CACHE_CATEGORIES_KEY);
+
   return useQuery({
     queryKey: ['categories'],
+    ...(cached ? { initialData: cached } : {}),
+    staleTime: 60_000,
+    retry: 1,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name');
-      
+      const { data, error } = await withTimeout(
+        supabase.from('categories').select('*').order('name'),
+        REQUEST_TIMEOUT_MS,
+        TIMEOUT_MESSAGE
+      );
+
       if (error) throw error;
-      return data as DBCategory[];
-    }
+      const categories = data as DBCategory[];
+      writeJSONToStorage(CACHE_CATEGORIES_KEY, categories);
+      return categories;
+    },
   });
 };
+
+async function attachAuthorProfiles(articles: any[]) {
+  const authorIds = [...new Set(articles?.map((a) => a.author_id).filter(Boolean) as string[])];
+  if (authorIds.length === 0) return { profiles: {} as Record<string, { id: string; full_name: string | null; email: string | null }> };
+
+  try {
+    const { data: profilesData, error } = await withTimeout(
+      supabase.from('profiles').select('id, full_name, email').in('id', authorIds),
+      REQUEST_TIMEOUT_MS,
+      TIMEOUT_MESSAGE
+    );
+
+    if (error || !profilesData) {
+      return { profiles: {} as Record<string, { id: string; full_name: string | null; email: string | null }> };
+    }
+
+    const profiles = Object.fromEntries(profilesData.map((p) => [p.id, p]));
+    return { profiles };
+  } catch {
+    return { profiles: {} as Record<string, { id: string; full_name: string | null; email: string | null }> };
+  }
+}
 
 export const useArticles = (options?: { status?: 'draft' | 'published' | 'archived'; category?: string; limit?: number }) => {
   return useQuery({
     queryKey: ['articles', options],
+    staleTime: 30_000,
+    retry: 1,
     queryFn: async () => {
       let query = supabase
         .from('articles')
-        .select(`
+        .select(
+          `
           id,
           title,
           slug,
@@ -71,7 +111,8 @@ export const useArticles = (options?: { status?: 'draft' | 'published' | 'archiv
           created_at,
           updated_at,
           category:categories(id, name, slug)
-        `)
+        `
+        )
         .order('created_at', { ascending: false });
 
       if (options?.status) {
@@ -81,39 +122,33 @@ export const useArticles = (options?: { status?: 'draft' | 'published' | 'archiv
         query = query.limit(options.limit);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await withTimeout(query, REQUEST_TIMEOUT_MS, TIMEOUT_MESSAGE);
       if (error) throw error;
-      
-      // Fetch author profiles separately
-      const authorIds = [...new Set(data?.map(a => a.author_id).filter(Boolean) as string[])];
-      let profiles: Record<string, { id: string; full_name: string | null; email: string | null }> = {};
-      
-      if (authorIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', authorIds);
-        
-        if (profilesData) {
-          profiles = Object.fromEntries(profilesData.map(p => [p.id, p]));
-        }
-      }
 
-      return data?.map(article => ({
+      const { profiles } = await attachAuthorProfiles(data ?? []);
+
+      return data?.map((article) => ({
         ...article,
-        author_profile: article.author_id ? profiles[article.author_id] || null : null
+        author_profile: article.author_id ? profiles[article.author_id] || null : null,
       })) as DBArticle[];
-    }
+    },
   });
 };
 
 export const usePublishedArticles = () => {
+  const cached = readJSONFromStorage<DBArticle[]>(CACHE_PUBLISHED_ARTICLES_KEY);
+
   return useQuery({
     queryKey: ['published-articles'],
+    ...(cached ? { initialData: cached } : {}),
+    staleTime: 30_000,
+    retry: 1,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('articles')
-        .select(`
+      const { data, error } = await withTimeout(
+        supabase
+          .from('articles')
+          .select(
+            `
           id,
           title,
           slug,
@@ -131,62 +166,69 @@ export const usePublishedArticles = () => {
           created_at,
           updated_at,
           category:categories(id, name, slug)
-        `)
-        .eq('status', 'published')
-        .order('published_at', { ascending: false });
+        `
+          )
+          .eq('status', 'published')
+          .order('published_at', { ascending: false }),
+        REQUEST_TIMEOUT_MS,
+        TIMEOUT_MESSAGE
+      );
 
       if (error) throw error;
-      
-      const authorIds = [...new Set(data?.map(a => a.author_id).filter(Boolean) as string[])];
-      let profiles: Record<string, { id: string; full_name: string | null; email: string | null }> = {};
-      
-      if (authorIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', authorIds);
-        
-        if (profilesData) {
-          profiles = Object.fromEntries(profilesData.map(p => [p.id, p]));
-        }
-      }
 
-      return data?.map(article => ({
+      const { profiles } = await attachAuthorProfiles(data ?? []);
+      const result = data?.map((article) => ({
         ...article,
-        author_profile: article.author_id ? profiles[article.author_id] || null : null
+        author_profile: article.author_id ? profiles[article.author_id] || null : null,
       })) as DBArticle[];
-    }
+
+      writeJSONToStorage(CACHE_PUBLISHED_ARTICLES_KEY, result);
+      return result;
+    },
   });
 };
 
 export const useArticleBySlug = (slug: string) => {
   return useQuery({
     queryKey: ['article', slug],
+    enabled: !!slug,
+    retry: 1,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('articles')
-        .select(`
+      const { data, error } = await withTimeout(
+        supabase
+          .from('articles')
+          .select(
+            `
           *,
           category:categories(id, name, slug)
-        `)
-        .eq('slug', slug)
-        .single();
+        `
+          )
+          .eq('slug', slug)
+          .single(),
+        REQUEST_TIMEOUT_MS,
+        TIMEOUT_MESSAGE
+      );
 
       if (error) throw error;
-      
+
       let author_profile = null;
       if (data?.author_id) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .eq('id', data.author_id)
-          .single();
-        author_profile = profile;
+        try {
+          const { data: profile, error: profileError } = await withTimeout(
+            supabase.from('profiles').select('id, full_name, email').eq('id', data.author_id).single(),
+            REQUEST_TIMEOUT_MS,
+            TIMEOUT_MESSAGE
+          );
+          if (!profileError) {
+            author_profile = profile;
+          }
+        } catch {
+          // Ignore profile failures
+        }
       }
 
       return { ...data, author_profile } as DBArticle;
     },
-    enabled: !!slug
   });
 };
 
@@ -209,11 +251,7 @@ export const useCreateArticle = () => {
       read_time?: number;
       published_at?: string | null;
     }) => {
-      const { data, error } = await supabase
-        .from('articles')
-        .insert([article])
-        .select()
-        .single();
+      const { data, error } = await supabase.from('articles').insert([article]).select().single();
 
       if (error) throw error;
       return data;
@@ -224,7 +262,7 @@ export const useCreateArticle = () => {
     },
     onError: (error: Error) => {
       toast.error(error.message);
-    }
+    },
   });
 };
 
@@ -233,12 +271,7 @@ export const useUpdateArticle = () => {
 
   return useMutation({
     mutationFn: async ({ id, ...article }: { id: string } & Partial<Omit<DBArticle, 'id' | 'created_at' | 'updated_at' | 'category' | 'author_profile'>>) => {
-      const { data, error } = await supabase
-        .from('articles')
-        .update(article)
-        .eq('id', id)
-        .select()
-        .single();
+      const { data, error } = await supabase.from('articles').update(article).eq('id', id).select().single();
 
       if (error) throw error;
       return data;
@@ -249,7 +282,7 @@ export const useUpdateArticle = () => {
     },
     onError: (error: Error) => {
       toast.error(error.message);
-    }
+    },
   });
 };
 
@@ -258,10 +291,7 @@ export const useDeleteArticle = () => {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('articles')
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.from('articles').delete().eq('id', id);
 
       if (error) throw error;
     },
@@ -271,7 +301,7 @@ export const useDeleteArticle = () => {
     },
     onError: (error: Error) => {
       toast.error(error.message);
-    }
+    },
   });
 };
 
@@ -282,20 +312,19 @@ export const useUploadImage = () => {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `articles/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('article-images')
-        .upload(filePath, file);
+      const { error: uploadError } = await supabase.storage.from('article-images').upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('article-images')
-        .getPublicUrl(filePath);
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('article-images').getPublicUrl(filePath);
 
       return publicUrl;
     },
     onError: (error: Error) => {
       toast.error('Failed to upload image: ' + error.message);
-    }
+    },
   });
 };
+

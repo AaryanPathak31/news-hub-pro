@@ -6,6 +6,9 @@ import { TrendingSidebar } from '@/components/news/TrendingSidebar';
 import { BreakingNewsTicker } from '@/components/news/BreakingNewsTicker';
 import { AdPlaceholder } from '@/components/news/AdPlaceholder';
 import { usePublishedArticles, useCategories, DBArticle } from '@/hooks/useArticles';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { AlertCircle } from 'lucide-react';
 import {
   generateHomeSEO,
   generateWebsiteSchema,
@@ -26,36 +29,40 @@ const toArticle = (dbArticle: DBArticle): Article => ({
   author: {
     id: dbArticle.author_id || '1',
     name: dbArticle.author_profile?.full_name || 'Staff Writer',
-    role: 'Reporter'
+    role: 'Reporter',
   },
   publishedAt: dbArticle.published_at || dbArticle.created_at,
   updatedAt: dbArticle.updated_at,
   readingTime: dbArticle.read_time,
   isBreaking: dbArticle.is_breaking,
   isFeatured: dbArticle.is_featured,
-  views: dbArticle.view_count
+  views: dbArticle.view_count,
 });
 
 const Index = () => {
   const seo = generateHomeSEO();
-  const { data: dbArticles, isLoading } = usePublishedArticles();
-  const { data: categories } = useCategories();
+  const {
+    data: dbArticles,
+    isLoading,
+    isError,
+    refetch: refetchArticles,
+  } = usePublishedArticles();
+  const { refetch: refetchCategories } = useCategories();
 
   const articles = dbArticles?.map(toArticle) || [];
-  
+
   // Breaking news - sorted by most recent first (auto-ranking)
   const breakingNews = articles
-    .filter(a => a.isBreaking)
+    .filter((a) => a.isBreaking)
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-  
-  const featuredArticles = articles.filter(a => a.isFeatured);
+
+  const featuredArticles = articles.filter((a) => a.isFeatured);
   const trendingArticles = [...articles].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
-  const latestArticles = [...articles].sort((a, b) => 
-    new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-  ).slice(0, 8);
-  
-  const getArticlesByCategory = (categorySlug: string) => 
-    articles.filter(a => a.category === categorySlug).slice(0, 4);
+  const latestArticles = [...articles]
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+    .slice(0, 8);
+
+  const getArticlesByCategory = (categorySlug: string) => articles.filter((a) => a.category === categorySlug).slice(0, 4);
 
   const technologyArticles = getArticlesByCategory('technology');
   const politicsArticles = getArticlesByCategory('politics');
@@ -66,14 +73,39 @@ const Index = () => {
 
   const structuredData = [generateWebsiteSchema(), generateOrganizationSchema()];
 
-  if (isLoading) {
+  if (isLoading && !dbArticles) {
     return (
       <Layout>
         <div className="container py-20 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
           <p className="mt-4 text-muted-foreground">Loading news...</p>
         </div>
       </Layout>
+    );
+  }
+
+  if (isError && (!dbArticles || dbArticles.length === 0)) {
+    return (
+      <>
+        <SEOHead seo={seo} structuredData={structuredData} />
+        <Layout>
+          <div className="container py-14">
+            <Alert className="max-w-2xl mx-auto">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>News service is not responding</AlertTitle>
+              <AlertDescription>
+                <p>We can’t load news right now. Please try again in a moment.</p>
+                <div className="mt-4 flex gap-2">
+                  <Button onClick={() => { refetchArticles(); refetchCategories(); }}>Retry</Button>
+                  <Button variant="outline" asChild>
+                    <a href="/auth">Login</a>
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          </div>
+        </Layout>
+      </>
     );
   }
 
@@ -85,11 +117,13 @@ const Index = () => {
         <Layout>
           <div className="container py-20 text-center">
             <h2 className="font-serif text-2xl font-bold mb-4">Welcome to NoNameNews</h2>
-            <p className="text-muted-foreground mb-6">
-              No articles published yet. Check back soon for the latest news!
-            </p>
+            <p className="text-muted-foreground mb-6">No articles published yet. Check back soon for the latest news!</p>
             <p className="text-sm text-muted-foreground">
-              Editors can <a href="/auth" className="text-primary hover:underline">log in</a> to create articles.
+              Editors can{' '}
+              <a href="/auth" className="text-primary hover:underline">
+                log in
+              </a>{' '}
+              to create articles.
             </p>
           </div>
         </Layout>
@@ -101,6 +135,22 @@ const Index = () => {
     <>
       <SEOHead seo={seo} structuredData={structuredData} />
       <Layout>
+        {/* Offline banner */}
+        {isError && (
+          <div className="container mt-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Showing cached news</AlertTitle>
+              <AlertDescription>
+                Latest updates are temporarily unavailable.
+                <Button variant="link" className="px-2" onClick={() => { refetchArticles(); refetchCategories(); }}>
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         {/* Breaking News Ticker - shows all breaking news, ranked by recency */}
         {breakingNews.length > 0 && <BreakingNewsTicker articles={breakingNews} />}
 
@@ -112,7 +162,10 @@ const Index = () => {
         {/* Breaking News Section */}
         {breakingNews.length > 0 && (
           <section className="container mt-8" aria-labelledby="breaking-news-heading">
-            <h2 id="breaking-news-heading" className="font-serif font-bold text-2xl mb-6 pb-3 border-b border-destructive flex items-center gap-2 text-destructive">
+            <h2
+              id="breaking-news-heading"
+              className="font-serif font-bold text-2xl mb-6 pb-3 border-b border-destructive flex items-center gap-2 text-destructive"
+            >
               <span className="animate-pulse">🔴</span> Breaking News
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -127,11 +180,7 @@ const Index = () => {
         <section className="container mt-8" aria-label="Featured news">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main Featured Article */}
-            <div className="lg:col-span-2">
-              {(featuredArticles[0] || latestArticles[0]) && (
-                <ArticleCard article={featuredArticles[0] || latestArticles[0]} variant="featured" />
-              )}
-            </div>
+            <div className="lg:col-span-2">{(featuredArticles[0] || latestArticles[0]) && <ArticleCard article={featuredArticles[0] || latestArticles[0]} variant="featured" />}</div>
 
             {/* Trending Sidebar */}
             <div>
@@ -161,28 +210,16 @@ const Index = () => {
 
         {/* Category Sections */}
         <div className="container">
-          {technologyArticles.length > 0 && (
-            <CategorySection category="technology" articles={technologyArticles} />
-          )}
-          {politicsArticles.length > 0 && (
-            <CategorySection category="politics" articles={politicsArticles} />
-          )}
-          
+          {technologyArticles.length > 0 && <CategorySection category="technology" articles={technologyArticles} />}
+          {politicsArticles.length > 0 && <CategorySection category="politics" articles={politicsArticles} />}
+
           {/* Mid-page Ad */}
           <AdPlaceholder variant="banner" className="w-full my-8" />
-          
-          {sportsArticles.length > 0 && (
-            <CategorySection category="sports" articles={sportsArticles} />
-          )}
-          {businessArticles.length > 0 && (
-            <CategorySection category="business" articles={businessArticles} />
-          )}
-          {entertainmentArticles.length > 0 && (
-            <CategorySection category="entertainment" articles={entertainmentArticles} />
-          )}
-          {healthArticles.length > 0 && (
-            <CategorySection category="health" articles={healthArticles} />
-          )}
+
+          {sportsArticles.length > 0 && <CategorySection category="sports" articles={sportsArticles} />}
+          {businessArticles.length > 0 && <CategorySection category="business" articles={businessArticles} />}
+          {entertainmentArticles.length > 0 && <CategorySection category="entertainment" articles={entertainmentArticles} />}
+          {healthArticles.length > 0 && <CategorySection category="health" articles={healthArticles} />}
         </div>
 
         {/* More Breaking News if available */}
@@ -228,3 +265,4 @@ const Index = () => {
 };
 
 export default Index;
+

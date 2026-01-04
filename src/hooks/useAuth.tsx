@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { withTimeout } from '@/lib/async';
 
 interface AuthContextType {
   user: User | null;
@@ -23,20 +24,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isEditor, setIsEditor] = useState(false);
 
   const checkUserRole = async (userId: string) => {
-    const { data: roles } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId);
+    try {
+      const { data: roles, error } = await withTimeout(
+        supabase.from('user_roles').select('role').eq('user_id', userId),
+        8_000,
+        'Role check timed out'
+      );
 
-    if (roles) {
-      setIsAdmin(roles.some(r => r.role === 'admin'));
-      setIsEditor(roles.some(r => r.role === 'editor' || r.role === 'admin'));
+      if (error) return;
+
+      if (roles) {
+        setIsAdmin(roles.some((r) => r.role === 'admin'));
+        setIsEditor(roles.some((r) => r.role === 'editor' || r.role === 'admin'));
+      }
+    } catch {
+      // Ignore role errors (keeps app usable even if backend is temporarily unavailable)
     }
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+    const safetyTimer = window.setTimeout(() => {
+      setLoading(false);
+    }, 5_000);
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+
+      if (session?.user) {
+        setTimeout(() => {
+          checkUserRole(session.user.id);
+        }, 0);
+      } else {
+        setIsAdmin(false);
+        setIsEditor(false);
+      }
+    });
+
+    withTimeout(supabase.auth.getSession(), 5_000, 'Session init timed out')
+      .then(({ data: { session } }) => {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -45,48 +74,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setTimeout(() => {
             checkUserRole(session.user.id);
           }, 0);
-        } else {
-          setIsAdmin(false);
-          setIsEditor(false);
         }
-      }
-    );
+      })
+      .catch(() => {
+        setLoading(false);
+      })
+      .finally(() => {
+        window.clearTimeout(safetyTimer);
+      });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-      
-      if (session?.user) {
-        checkUserRole(session.user.id);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      window.clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        12_000,
+        'Login timed out'
+      );
+      return { error };
+    } catch (err) {
+      return { error: err as Error };
+    }
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: { full_name: fullName }
-      }
-    });
-    return { error };
+    try {
+      const redirectUrl = `${window.location.origin}/`;
+      const { error } = await withTimeout(
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: redirectUrl,
+            data: { full_name: fullName },
+          },
+        }),
+        12_000,
+        'Signup timed out'
+      );
+      return { error };
+    } catch (err) {
+      return { error: err as Error };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setIsAdmin(false);
-    setIsEditor(false);
+    try {
+      await withTimeout(supabase.auth.signOut(), 10_000, 'Sign out timed out');
+    } finally {
+      setIsAdmin(false);
+      setIsEditor(false);
+    }
   };
 
   return (
@@ -103,3 +146,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

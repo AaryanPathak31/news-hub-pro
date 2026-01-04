@@ -14,6 +14,8 @@ import { useArticleBySlug, usePublishedArticles, DBArticle } from '@/hooks/useAr
 import { generateArticleSEO, generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo';
 import { getCategoryInfo, Article, Category } from '@/types/news';
 import { Clock, Calendar, RefreshCw, User, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { format } from 'date-fns';
 import NotFound from './NotFound';
 
@@ -37,14 +39,14 @@ const toArticle = (dbArticle: DBArticle): Article => ({
   author: {
     id: dbArticle.author_id || '1',
     name: dbArticle.author_profile?.full_name || 'Staff Writer',
-    role: 'Reporter'
+    role: 'Reporter',
   },
   publishedAt: dbArticle.published_at || dbArticle.created_at,
   updatedAt: dbArticle.updated_at,
   readingTime: dbArticle.read_time,
   isBreaking: dbArticle.is_breaking,
   isFeatured: dbArticle.is_featured,
-  views: dbArticle.view_count
+  views: dbArticle.view_count,
 });
 
 const ArticlePage = () => {
@@ -52,9 +54,14 @@ const ArticlePage = () => {
   const [translatedLanguage, setTranslatedLanguage] = useState<string>('en');
   const [translatedContent, setTranslatedContent] = useState<string>('');
   const [translatedTitle, setTranslatedTitle] = useState<string>('');
-  
-  const { data: dbArticle, isLoading } = useArticleBySlug(slug || '');
-  const { data: allArticles } = usePublishedArticles();
+
+  const {
+    data: dbArticle,
+    isLoading,
+    isError,
+    refetch,
+  } = useArticleBySlug(slug || '');
+  const { data: allArticles, isError: isArticlesError, refetch: refetchArticles } = usePublishedArticles();
 
   const handleTranslation = (content: string, title: string, language: string) => {
     setTranslatedContent(content);
@@ -62,11 +69,30 @@ const ArticlePage = () => {
     setTranslatedLanguage(language);
   };
 
-  if (isLoading) {
+  if (isLoading && !dbArticle) {
     return (
       <Layout>
         <div className="container py-20 text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isError && !dbArticle) {
+    return (
+      <Layout>
+        <div className="container py-14">
+          <Alert className="max-w-2xl mx-auto">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Article is not responding</AlertTitle>
+            <AlertDescription>
+              <p>We can’t load this article right now. Please try again.</p>
+              <div className="mt-4">
+                <Button onClick={() => refetch()}>Retry</Button>
+              </div>
+            </AlertDescription>
+          </Alert>
         </div>
       </Layout>
     );
@@ -78,17 +104,15 @@ const ArticlePage = () => {
 
   const article = toArticle(dbArticle);
   const articles = allArticles?.map(toArticle) || [];
-  
+
   const relatedArticles = articles
-    .filter(a => a.id !== article.id && (a.category === article.category || a.tags.some(tag => article.tags.includes(tag))))
+    .filter((a) => a.id !== article.id && (a.category === article.category || a.tags.some((tag) => article.tags.includes(tag))))
     .slice(0, 4);
-  
-  const trendingArticles = [...articles]
-    .sort((a, b) => (b.views || 0) - (a.views || 0))
-    .slice(0, 5);
+
+  const trendingArticles = [...articles].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
 
   const categoryInfo = getCategoryInfo(article.category);
-  
+
   const seo = generateArticleSEO(article);
   const articleSchema = generateNewsArticleSchema(article);
   const breadcrumbSchema = generateBreadcrumbSchema([
@@ -99,9 +123,7 @@ const ArticlePage = () => {
 
   const publishedDate = format(new Date(article.publishedAt), 'MMMM d, yyyy');
   const publishedTime = format(new Date(article.publishedAt), 'h:mm a');
-  const updatedDate = article.updatedAt 
-    ? format(new Date(article.updatedAt), 'MMMM d, yyyy, h:mm a')
-    : null;
+  const updatedDate = article.updatedAt ? format(new Date(article.updatedAt), 'MMMM d, yyyy, h:mm a') : null;
 
   const articleUrl = `https://nonamenews.com/${article.category}/${article.slug}`;
 
@@ -118,6 +140,22 @@ const ArticlePage = () => {
             ]}
           />
 
+          {/* Offline banner */}
+          {isArticlesError && (
+            <div className="my-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Showing cached news</AlertTitle>
+                <AlertDescription>
+                  Latest updates are temporarily unavailable.
+                  <Button variant="link" className="px-2" onClick={() => refetchArticles()}>
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
           {/* Header Ad */}
           <AdPlaceholder variant="leaderboard" className="w-full max-w-4xl mx-auto mb-6" />
 
@@ -132,14 +170,11 @@ const ArticlePage = () => {
                   </span>
                 )}
                 <CategoryBadge category={article.category} size="md" className="mb-4" />
-                
-                <h1 
-                  className="font-serif font-bold text-3xl md:text-4xl lg:text-5xl leading-tight mb-4"
-                  itemProp="headline"
-                >
+
+                <h1 className="font-serif font-bold text-3xl md:text-4xl lg:text-5xl leading-tight mb-4" itemProp="headline">
                   {translatedTitle || article.title}
                 </h1>
-                
+
                 <p className="text-xl text-muted-foreground leading-relaxed mb-6" itemProp="description">
                   {article.excerpt}
                 </p>
@@ -191,15 +226,11 @@ const ArticlePage = () => {
 
               {/* Translation Option */}
               <div className="mb-6">
-                <ArticleTranslate 
-                  content={article.content}
-                  title={article.title}
-                  onTranslated={handleTranslation}
-                />
+                <ArticleTranslate content={article.content} title={article.title} onTranslated={handleTranslation} />
               </div>
 
               {/* Article Body */}
-              <div 
+              <div
                 className="article-body font-sans"
                 itemProp="articleBody"
                 lang={translatedLanguage}
@@ -238,12 +269,7 @@ const ArticlePage = () => {
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {relatedArticles.map((relatedArticle) => (
-                      <ArticleCard
-                        key={relatedArticle.id}
-                        article={relatedArticle}
-                        variant="default"
-                        showExcerpt={false}
-                      />
+                      <ArticleCard key={relatedArticle.id} article={relatedArticle} variant="default" showExcerpt={false} />
                     ))}
                   </div>
                 </section>
@@ -265,3 +291,4 @@ const ArticlePage = () => {
 };
 
 export default ArticlePage;
+
