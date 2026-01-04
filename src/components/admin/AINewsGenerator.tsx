@@ -8,16 +8,16 @@ import { Switch } from "@/components/ui/switch";
 import { useCategories } from "@/hooks/useArticles";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Sparkles, Newspaper, Zap, Clock, Settings, Timer } from "lucide-react";
+import { Loader2, Sparkles, Newspaper, Zap, Clock, Settings, Timer, AlertCircle } from "lucide-react";
 
 export const AINewsGenerator = () => {
   const { data: categories, isLoading: categoriesLoading } = useCategories();
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [articleCount, setArticleCount] = useState<number>(1);
+  const [articleCount, setArticleCount] = useState<number>(2);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationLog, setGenerationLog] = useState<string[]>([]);
   const [autoEnabled, setAutoEnabled] = useState(false);
-  const [intervalMinutes, setIntervalMinutes] = useState(30);
+  const [intervalMinutes, setIntervalMinutes] = useState(20);
   const [autoTimer, setAutoTimer] = useState<NodeJS.Timeout | null>(null);
   const [nextRunTime, setNextRunTime] = useState<Date | null>(null);
 
@@ -48,10 +48,11 @@ export const AINewsGenerator = () => {
     const selectedCats = categories?.filter(c => selectedCategories.includes(c.id)) || [];
     
     setIsGenerating(true);
-    setGenerationLog([`Starting AI news generation for ${selectedCats.map(c => c.name).join(', ')}...`]);
+    setGenerationLog([`🚀 Starting AI news generation for ${selectedCats.map(c => c.name).join(', ')}...`]);
+    setGenerationLog(prev => [...prev, `📰 Generating ${articleCount} article(s) per category as BREAKING NEWS`]);
 
     try {
-      setGenerationLog(prev => [...prev, "Fetching latest news from RSS feeds..."]);
+      setGenerationLog(prev => [...prev, "📡 Fetching latest news from RSS feeds (with Indian news focus)..."]);
       
       const { data, error } = await supabase.functions.invoke("auto-generate-news", {
         body: {
@@ -72,7 +73,7 @@ export const AINewsGenerator = () => {
         if (data.articles?.length > 0) {
           setGenerationLog(prev => [
             ...prev, 
-            ...data.articles.map((a: { title: string }) => `✓ Published: ${a.title}`)
+            ...data.articles.map((a: { title: string }) => `✓ 🔴 BREAKING: ${a.title}`)
           ]);
         }
       } else {
@@ -96,17 +97,19 @@ export const AINewsGenerator = () => {
     }
 
     setIsGenerating(true);
-    setGenerationLog(["Starting automated news generation for all categories..."]);
+    setGenerationLog([`🚀 Starting automated news generation for ALL categories...`]);
+    setGenerationLog(prev => [...prev, `📰 ${articleCount} articles per category as BREAKING NEWS`]);
+    setGenerationLog(prev => [...prev, `🇮🇳 Prioritizing Indian news sources`]);
 
     for (const category of categories) {
       try {
-        setGenerationLog(prev => [...prev, `\nProcessing ${category.name}...`]);
+        setGenerationLog(prev => [...prev, `\n📁 Processing ${category.name}...`]);
         
         const { data, error } = await supabase.functions.invoke("auto-generate-news", {
           body: {
             categoryIds: [category.id],
             categoryNames: [category.name],
-            count: 1,
+            count: articleCount,
           },
         });
 
@@ -114,6 +117,11 @@ export const AINewsGenerator = () => {
           setGenerationLog(prev => [...prev, `✗ ${category.name}: ${error.message}`]);
         } else if (data.success) {
           setGenerationLog(prev => [...prev, `✓ ${category.name}: ${data.message}`]);
+          if (data.articles?.length > 0) {
+            data.articles.forEach((a: { title: string }) => {
+              setGenerationLog(prev => [...prev, `  🔴 ${a.title}`]);
+            });
+          }
         }
 
         // Delay between categories to avoid rate limits
@@ -124,7 +132,7 @@ export const AINewsGenerator = () => {
       }
     }
 
-    setGenerationLog(prev => [...prev, "\n✓ Automated generation complete!"]);
+    setGenerationLog(prev => [...prev, "\n✓ Automated generation complete! All articles published as BREAKING NEWS."]);
     toast.success("Automated generation complete!");
     setIsGenerating(false);
   };
@@ -168,11 +176,23 @@ export const AINewsGenerator = () => {
             AI News Generator
           </CardTitle>
           <CardDescription>
-            Automatically fetch trending news, rewrite with AI to avoid plagiarism, 
-            generate unique images, and publish to your site.
+            Automatically fetch trending news (with Indian focus), rewrite with AI for SEO optimization, 
+            generate unique images, and publish as Breaking News.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-6">
+          {/* Breaking News Info */}
+          <div className="flex items-start gap-3 p-4 bg-destructive/10 rounded-lg border border-destructive/20">
+            <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+            <div>
+              <p className="font-medium text-destructive">All Generated Articles = Breaking News</p>
+              <p className="text-sm text-muted-foreground">
+                New articles are automatically marked as Breaking News. After 20 minutes, they get demoted 
+                when newer articles are published, creating an auto-ranking system.
+              </p>
+            </div>
+          </div>
+
           {/* Category Selection */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -218,9 +238,10 @@ export const AINewsGenerator = () => {
                 min={1}
                 max={5}
                 value={articleCount}
-                onChange={(e) => setArticleCount(parseInt(e.target.value) || 1)}
+                onChange={(e) => setArticleCount(parseInt(e.target.value) || 2)}
                 disabled={isGenerating}
               />
+              <p className="text-xs text-muted-foreground">Recommended: 2 articles per category</p>
             </div>
 
             <div className="flex items-end">
@@ -238,7 +259,7 @@ export const AINewsGenerator = () => {
                 ) : (
                   <>
                     <Newspaper className="mr-2 h-4 w-4" />
-                    Generate Articles
+                    Generate Breaking News
                   </>
                 )}
               </Button>
@@ -253,7 +274,7 @@ export const AINewsGenerator = () => {
             size="lg"
           >
             <Zap className="mr-2 h-4 w-4" />
-            Generate for All Categories (1 each)
+            Generate for All Categories ({articleCount} each)
           </Button>
         </CardContent>
       </Card>
@@ -266,15 +287,16 @@ export const AINewsGenerator = () => {
             Automated Scheduling
           </CardTitle>
           <CardDescription>
-            Enable automatic news generation at regular intervals
+            Enable automatic news generation at regular intervals. Articles older than 20 minutes 
+            are automatically demoted from Breaking News when new articles are published.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
-              <Label>Auto-generate News</Label>
+              <Label>Auto-generate Breaking News</Label>
               <p className="text-sm text-muted-foreground">
-                Automatically generate 1 article per category at set intervals
+                Automatically generate {articleCount} article(s) per category at set intervals
               </p>
             </div>
             <Switch
@@ -291,14 +313,14 @@ export const AINewsGenerator = () => {
                 <Input
                   id="interval"
                   type="number"
-                  min={15}
+                  min={10}
                   max={1440}
                   value={intervalMinutes}
-                  onChange={(e) => setIntervalMinutes(parseInt(e.target.value) || 30)}
+                  onChange={(e) => setIntervalMinutes(parseInt(e.target.value) || 20)}
                   disabled={isGenerating}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Recommended: 30-60 minutes to avoid rate limits
+                  Default: 20 minutes. Breaking news older than this will be auto-demoted.
                 </p>
               </div>
 
@@ -332,6 +354,7 @@ export const AINewsGenerator = () => {
                   className={`${
                     log.startsWith("✓") ? "text-green-600 dark:text-green-400" : 
                     log.startsWith("✗") ? "text-red-600 dark:text-red-400" : 
+                    log.includes("🔴") ? "text-destructive font-medium" :
                     "text-muted-foreground"
                   }`}
                 >
@@ -355,26 +378,31 @@ export const AINewsGenerator = () => {
           <CardTitle className="text-sm">How It Works</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-5">
             <div className="text-center p-4 bg-gradient-to-br from-primary/10 to-transparent rounded-lg border">
-              <div className="text-2xl mb-2">📡</div>
+              <div className="text-2xl mb-2">🇮🇳</div>
               <div className="font-medium text-sm">1. Fetch News</div>
-              <div className="text-xs text-muted-foreground">From RSS feeds (BBC, NYT, etc.)</div>
+              <div className="text-xs text-muted-foreground">Indian + Global sources</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-primary/10 to-transparent rounded-lg border">
               <div className="text-2xl mb-2">🤖</div>
               <div className="font-medium text-sm">2. AI Rewrite</div>
-              <div className="text-xs text-muted-foreground">Original content, no plagiarism</div>
+              <div className="text-xs text-muted-foreground">SEO optimized content</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-primary/10 to-transparent rounded-lg border">
               <div className="text-2xl mb-2">🖼️</div>
               <div className="font-medium text-sm">3. Generate Image</div>
               <div className="text-xs text-muted-foreground">AI-powered visuals</div>
             </div>
+            <div className="text-center p-4 bg-gradient-to-br from-destructive/10 to-transparent rounded-lg border border-destructive/20">
+              <div className="text-2xl mb-2">🔴</div>
+              <div className="font-medium text-sm">4. Breaking News</div>
+              <div className="text-xs text-muted-foreground">Auto-published live</div>
+            </div>
             <div className="text-center p-4 bg-gradient-to-br from-primary/10 to-transparent rounded-lg border">
-              <div className="text-2xl mb-2">🚀</div>
-              <div className="font-medium text-sm">4. Auto-Publish</div>
-              <div className="text-xs text-muted-foreground">Instantly live on site</div>
+              <div className="text-2xl mb-2">⏰</div>
+              <div className="font-medium text-sm">5. Auto-Rank</div>
+              <div className="text-xs text-muted-foreground">Demote after 20 min</div>
             </div>
           </div>
         </CardContent>

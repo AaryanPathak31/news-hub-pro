@@ -11,24 +11,44 @@ export const SEOHead = ({ seo, structuredData }: SEOHeadProps) => {
 
   return (
     <Helmet>
+      {/* Primary Meta Tags */}
       <title>{seo.title}</title>
+      <meta name="title" content={seo.title} />
       <meta name="description" content={seo.description} />
+      {seo.keywords && <meta name="keywords" content={seo.keywords} />}
       <link rel="canonical" href={seo.canonical} />
+      
+      {/* Robots */}
+      <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+      
+      {/* Google News specific */}
+      {seo.keywords && <meta name="news_keywords" content={seo.keywords} />}
+      <meta name="googlebot-news" content="index, follow" />
 
-      {/* Open Graph */}
-      <meta property="og:title" content={seo.openGraph.title} />
-      <meta property="og:description" content={seo.openGraph.description} />
+      {/* Open Graph / Facebook */}
       <meta property="og:type" content={seo.openGraph.type} />
       <meta property="og:url" content={seo.openGraph.url} />
+      <meta property="og:title" content={seo.openGraph.title} />
+      <meta property="og:description" content={seo.openGraph.description} />
       <meta property="og:site_name" content={seo.openGraph.siteName} />
       <meta property="og:locale" content={seo.openGraph.locale} />
-      {seo.openGraph.image && <meta property="og:image" content={seo.openGraph.image} />}
+      {seo.openGraph.image && (
+        <>
+          <meta property="og:image" content={seo.openGraph.image} />
+          <meta property="og:image:width" content="1200" />
+          <meta property="og:image:height" content="630" />
+          <meta property="og:image:alt" content={seo.openGraph.title} />
+        </>
+      )}
 
       {/* Twitter Card */}
       <meta name="twitter:card" content={seo.twitter.card} />
+      <meta name="twitter:url" content={seo.openGraph.url} />
       <meta name="twitter:title" content={seo.twitter.title} />
       <meta name="twitter:description" content={seo.twitter.description} />
       {seo.twitter.image && <meta name="twitter:image" content={seo.twitter.image} />}
+      {seo.twitter.site && <meta name="twitter:site" content={seo.twitter.site} />}
+      {seo.twitter.creator && <meta name="twitter:creator" content={seo.twitter.creator} />}
 
       {/* Article-specific meta tags */}
       {seo.article?.publishedTime && (

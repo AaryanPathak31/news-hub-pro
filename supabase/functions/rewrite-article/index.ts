@@ -19,6 +19,11 @@ const languageInstructions: Record<string, string> = {
   ar: "اكتب المقال بالعربية (Arabic).",
   hi: "लेख हिंदी में लिखें (Hindi).",
   ru: "Напишите статью на русском языке (Russian).",
+  bn: "নিবন্ধটি বাংলায় লিখুন (Bengali).",
+  ta: "கட்டுரையை தமிழில் எழுதுங்கள் (Tamil).",
+  te: "వ్యాసాన్ని తెలుగులో వ్రాయండి (Telugu).",
+  mr: "लेख मराठीत लिहा (Marathi).",
+  gu: "લેખ ગુજરાતીમાં લખો (Gujarati).",
 };
 
 serve(async (req) => {
@@ -76,7 +81,7 @@ serve(async (req) => {
       console.log(`Authenticated user ${user.id} with role: ${roleData ? 'admin' : 'editor'}`);
     }
 
-    const { title, description, source, language = "en" } = await req.json();
+    const { title, description, source, language = "en", optimizeSEO = true } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
@@ -84,7 +89,21 @@ serve(async (req) => {
     }
 
     const langInstruction = languageInstructions[language] || languageInstructions.en;
-    console.log(`Rewriting article: ${title} in language: ${language}`);
+    console.log(`Rewriting article: ${title} in language: ${language}, SEO optimized: ${optimizeSEO}`);
+
+    const seoInstructions = optimizeSEO ? `
+SEO OPTIMIZATION REQUIREMENTS:
+1. Use the primary keyword in the first paragraph
+2. Include semantic keywords naturally throughout
+3. Use H2 and H3 headings with keywords
+4. Write a compelling meta description (excerpt)
+5. Include internal linking suggestions in content
+6. Use short paragraphs (2-3 sentences each)
+7. Include bullet points or numbered lists where appropriate
+8. Add a strong hook in the first sentence
+9. Make headlines attention-grabbing but accurate
+10. Target 500-800 words for better SEO ranking
+` : '';
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -97,26 +116,28 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are a professional news writer. Your task is to completely rewrite news articles to be original while maintaining factual accuracy. 
+            content: `You are a professional news writer and SEO expert. Your task is to completely rewrite news articles to be original while maintaining factual accuracy and optimizing for search engines.
 
 IMPORTANT RULES:
 1. Create a completely NEW and UNIQUE article - do not copy any phrases from the original
 2. Maintain all factual information but express it in your own words
 3. Use a professional, engaging news writing style
-4. The article should be 300-500 words
+4. The article should be 500-800 words for better SEO
 5. Include relevant context and background information
 6. Write in an objective, journalistic tone
 7. ${langInstruction}
+${seoInstructions}
 
 Respond with a JSON object containing:
-- "title": A new, catchy headline (different from original)
-- "content": The full rewritten article in HTML format with <p> tags for paragraphs
-- "excerpt": A 2-3 sentence summary
-- "imagePrompt": A detailed prompt to generate a relevant image for this article (describe scene, style, colors - always in English for image generation)`
+- "title": A new, SEO-optimized headline (60 characters max, include primary keyword)
+- "content": The full rewritten article in HTML format with <p>, <h2>, <h3>, <ul>, <li> tags. Include proper heading structure.
+- "excerpt": A compelling meta description (150-160 characters, include keyword)
+- "imagePrompt": A detailed prompt to generate a relevant image for this article (describe scene, style, colors - always in English)
+- "seoKeywords": An array of 5-8 relevant SEO keywords for this article`
           },
           {
             role: "user",
-            content: `Please rewrite this news article:
+            content: `Please rewrite this news article with SEO optimization:
 
 Original Title: ${title}
 
@@ -124,7 +145,7 @@ Original Summary: ${description}
 
 Source: ${source}
 
-Create a completely original article based on this news. ${langInstruction}`
+Create a completely original, SEO-optimized article based on this news. ${langInstruction}`
           }
         ],
       }),
@@ -170,7 +191,7 @@ Create a completely original article based on this news. ${langInstruction}`
       throw new Error("Failed to parse AI response");
     }
 
-    console.log("Article rewritten successfully");
+    console.log("Article rewritten successfully with SEO optimization");
 
     return new Response(JSON.stringify(parsed), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

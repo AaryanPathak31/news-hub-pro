@@ -26,47 +26,68 @@ serve(async (req) => {
       );
     }
 
-    // Create client with user's auth token for verification
-    const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
+    // Check if this is a service role call (internal/cron)
+    const isServiceRole = authHeader.includes(supabaseServiceKey);
+    let userId: string | null = null;
 
-    const { data: { user }, error: authError } = await userSupabase.auth.getUser();
-    if (authError || !user) {
-      console.error("Authentication failed:", authError?.message);
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!isServiceRole) {
+      // Create client with user's auth token for verification
+      const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } }
+      });
+
+      const { data: { user }, error: authError } = await userSupabase.auth.getUser();
+      if (authError || !user) {
+        console.error("Authentication failed:", authError?.message);
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Check user has editor or admin role
+      const { data: roleData, error: roleError } = await userSupabase
+        .rpc('has_role', { _user_id: user.id, _role: 'admin' });
+      
+      const { data: editorData } = await userSupabase
+        .rpc('has_role', { _user_id: user.id, _role: 'editor' });
+
+      if (roleError || (!roleData && !editorData)) {
+        console.error("User lacks required role:", user.id);
+        return new Response(
+          JSON.stringify({ error: "Forbidden: Editor or Admin role required" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      userId = user.id;
+      console.log(`Authenticated user ${user.id} with role: ${roleData ? 'admin' : 'editor'}`);
     }
-
-    // Check user has editor or admin role
-    const { data: roleData, error: roleError } = await userSupabase
-      .rpc('has_role', { _user_id: user.id, _role: 'admin' });
-    
-    const { data: editorData } = await userSupabase
-      .rpc('has_role', { _user_id: user.id, _role: 'editor' });
-
-    if (roleError || (!roleData && !editorData)) {
-      console.error("User lacks required role:", user.id);
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Editor or Admin role required" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`Authenticated user ${user.id} with role: ${roleData ? 'admin' : 'editor'}`);
 
     // Use service role client for database operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { categoryIds, categoryNames, count = 1, language = "en" } = await req.json();
+    const { categoryIds, categoryNames, count = 2, language = "en" } = await req.json();
 
     // Support both single category (legacy) and multiple categories
     const categories = categoryIds || [];
     const names = categoryNames || [];
     
     console.log(`Auto-generating ${count} article(s) for categories: ${names.join(', ')} in ${language}`);
+
+    // First, demote existing breaking news (older than 20 minutes)
+    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    const { error: demoteError } = await supabase
+      .from("articles")
+      .update({ is_breaking: false })
+      .eq("is_breaking", true)
+      .lt("published_at", twentyMinutesAgo);
+    
+    if (demoteError) {
+      console.error("Error demoting old breaking news:", demoteError);
+    } else {
+      console.log("Demoted old breaking news");
+    }
 
     // Step 1: Fetch news from RSS feeds - use first category name for news fetching
     const primaryCategory = names[0] || "general";
@@ -76,7 +97,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${supabaseServiceKey}`,
       },
-      body: JSON.stringify({ category: primaryCategory, limit: count }),
+      body: JSON.stringify({ category: primaryCategory, limit: count, focusIndian: true }),
     });
 
     if (!fetchNewsResponse.ok) {
@@ -98,7 +119,7 @@ serve(async (req) => {
       try {
         console.log(`Processing: ${newsItem.title}`);
 
-        // Step 2: Rewrite the article using AI
+        // Step 2: Rewrite the article using AI with SEO optimization
         const rewriteResponse = await fetch(`${supabaseUrl}/functions/v1/rewrite-article`, {
           method: "POST",
           headers: {
@@ -110,6 +131,7 @@ serve(async (req) => {
             description: newsItem.description,
             source: newsItem.source,
             language: language,
+            optimizeSEO: true,
           }),
         });
 
@@ -121,7 +143,7 @@ serve(async (req) => {
 
         const rewritten = await rewriteResponse.json();
         
-        // Generate slug
+        // Generate SEO-optimized slug
         const slug = rewritten.title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
@@ -149,8 +171,7 @@ serve(async (req) => {
           console.log(`Image generated: ${imageData.placeholder ? 'placeholder' : 'AI generated'}`);
         }
 
-        // Step 4: Insert into database with first category (for main category_id)
-        // Tags will include all category names
+        // Step 4: Insert into database - ALL new articles are breaking news
         const { data: article, error: insertError } = await supabase
           .from("articles")
           .insert({
@@ -160,13 +181,13 @@ serve(async (req) => {
             excerpt: rewritten.excerpt,
             featured_image: imageUrl,
             category_id: categories[0], // Primary category
-            author_id: user.id, // Set the authenticated user as author
+            author_id: userId, // Set the authenticated user as author (null for cron)
             status: "published",
             published_at: new Date().toISOString(),
-            is_breaking: false,
+            is_breaking: true, // All new articles are breaking news
             is_featured: false,
             read_time: Math.ceil(rewritten.content.split(' ').length / 200),
-            tags: names.filter((n: string) => n), // Only category names, no "AI Generated" tag
+            tags: [...names.filter((n: string) => n), ...(rewritten.seoKeywords || [])],
           })
           .select()
           .single();
@@ -176,7 +197,7 @@ serve(async (req) => {
           continue;
         }
 
-        console.log(`Article created: ${article.id}`);
+        console.log(`Article created as BREAKING: ${article.id}`);
         generatedArticles.push(article);
 
         // Add a small delay between articles to avoid rate limits
@@ -189,7 +210,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Generated ${generatedArticles.length} article(s)`,
+        message: `Generated ${generatedArticles.length} breaking article(s)`,
         articles: generatedArticles 
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

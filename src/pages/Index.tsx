@@ -43,7 +43,11 @@ const Index = () => {
 
   const articles = dbArticles?.map(toArticle) || [];
   
-  const breakingNews = articles.filter(a => a.isBreaking);
+  // Breaking news - sorted by most recent first (auto-ranking)
+  const breakingNews = articles
+    .filter(a => a.isBreaking)
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  
   const featuredArticles = articles.filter(a => a.isFeatured);
   const trendingArticles = [...articles].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
   const latestArticles = [...articles].sort((a, b) => 
@@ -57,6 +61,8 @@ const Index = () => {
   const politicsArticles = getArticlesByCategory('politics');
   const sportsArticles = getArticlesByCategory('sports');
   const businessArticles = getArticlesByCategory('business');
+  const entertainmentArticles = getArticlesByCategory('entertainment');
+  const healthArticles = getArticlesByCategory('health');
 
   const structuredData = [generateWebsiteSchema(), generateOrganizationSchema()];
 
@@ -95,13 +101,27 @@ const Index = () => {
     <>
       <SEOHead seo={seo} structuredData={structuredData} />
       <Layout>
-        {/* Breaking News Ticker */}
+        {/* Breaking News Ticker - shows all breaking news, ranked by recency */}
         {breakingNews.length > 0 && <BreakingNewsTicker articles={breakingNews} />}
 
         {/* Header Ad */}
         <div className="container mt-4">
           <AdPlaceholder variant="leaderboard" className="w-full max-w-4xl mx-auto" />
         </div>
+
+        {/* Breaking News Section */}
+        {breakingNews.length > 0 && (
+          <section className="container mt-8" aria-labelledby="breaking-news-heading">
+            <h2 id="breaking-news-heading" className="font-serif font-bold text-2xl mb-6 pb-3 border-b border-destructive flex items-center gap-2 text-destructive">
+              <span className="animate-pulse">🔴</span> Breaking News
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {breakingNews.slice(0, 4).map((article) => (
+                <ArticleCard key={article.id} article={article} variant="default" showExcerpt={false} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Featured Section */}
         <section className="container mt-8" aria-label="Featured news">
@@ -157,7 +177,32 @@ const Index = () => {
           {businessArticles.length > 0 && (
             <CategorySection category="business" articles={businessArticles} />
           )}
+          {entertainmentArticles.length > 0 && (
+            <CategorySection category="entertainment" articles={entertainmentArticles} />
+          )}
+          {healthArticles.length > 0 && (
+            <CategorySection category="health" articles={healthArticles} />
+          )}
         </div>
+
+        {/* More Breaking News if available */}
+        {breakingNews.length > 4 && (
+          <section className="container mt-8" aria-labelledby="more-breaking-heading">
+            <h2 id="more-breaking-heading" className="font-serif font-bold text-2xl mb-6 pb-3 border-b border-border">
+              More Breaking Stories
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-4">
+                {breakingNews.slice(4, 10).map((article) => (
+                  <ArticleCard key={article.id} article={article} variant="horizontal" />
+                ))}
+              </div>
+              <div>
+                <AdPlaceholder variant="sidebar" className="sticky top-24" />
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* More Latest News */}
         {latestArticles.length > 4 && (
