@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { SEOHead } from '@/components/SEOHead';
@@ -8,10 +9,11 @@ import { ShareButtons } from '@/components/news/ShareButtons';
 import { TrendingSidebar } from '@/components/news/TrendingSidebar';
 import { AdPlaceholder } from '@/components/news/AdPlaceholder';
 import { CategoryBadge } from '@/components/news/CategoryBadge';
+import { ArticleTranslate } from '@/components/news/ArticleTranslate';
 import { useArticleBySlug, usePublishedArticles, DBArticle } from '@/hooks/useArticles';
 import { generateArticleSEO, generateNewsArticleSchema, generateBreadcrumbSchema } from '@/lib/seo';
 import { getCategoryInfo, Article, Category } from '@/types/news';
-import { Clock, Calendar, RefreshCw, User } from 'lucide-react';
+import { Clock, Calendar, RefreshCw, User, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import NotFound from './NotFound';
 
@@ -47,9 +49,14 @@ const toArticle = (dbArticle: DBArticle): Article => ({
 
 const ArticlePage = () => {
   const { category, slug } = useParams<{ category: string; slug: string }>();
+  const [translatedLanguage, setTranslatedLanguage] = useState<string>('en');
   
   const { data: dbArticle, isLoading } = useArticleBySlug(slug || '');
   const { data: allArticles } = usePublishedArticles();
+
+  const handleTranslation = (content: string, title: string, language: string) => {
+    setTranslatedLanguage(language);
+  };
 
   if (isLoading) {
     return (
@@ -178,10 +185,20 @@ const ArticlePage = () => {
                 />
               </figure>
 
+              {/* Translation Option */}
+              <div className="mb-6">
+                <ArticleTranslate 
+                  content={article.content}
+                  title={article.title}
+                  onTranslated={handleTranslation}
+                />
+              </div>
+
               {/* Article Body */}
               <div 
                 className="article-body font-sans"
                 itemProp="articleBody"
+                lang={translatedLanguage}
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content, sanitizeConfig) }}
               />
 

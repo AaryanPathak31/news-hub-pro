@@ -6,40 +6,59 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Free RSS feeds from major news sources
+// Free RSS feeds from major news sources - with focus on Indian news
 const RSS_FEEDS: Record<string, string[]> = {
   "politics": [
+    "https://timesofindia.indiatimes.com/rssfeeds/1221656.cms", // TOI Politics
+    "https://www.thehindu.com/news/national/feeder/default.rss", // The Hindu
     "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
     "https://feeds.bbci.co.uk/news/politics/rss.xml",
   ],
   "technology": [
+    "https://timesofindia.indiatimes.com/rssfeeds/66949542.cms", // TOI Tech
     "https://feeds.arstechnica.com/arstechnica/technology-lab",
     "https://www.theverge.com/rss/index.xml",
     "https://techcrunch.com/feed/",
   ],
   "sports": [
+    "https://timesofindia.indiatimes.com/rssfeeds/4719148.cms", // TOI Sports
+    "https://www.thehindu.com/sport/feeder/default.rss", // The Hindu Sports
     "https://rss.nytimes.com/services/xml/rss/nyt/Sports.xml",
     "https://feeds.bbci.co.uk/sport/rss.xml",
   ],
   "business": [
+    "https://timesofindia.indiatimes.com/rssfeeds/1898055.cms", // TOI Business
+    "https://www.thehindu.com/business/feeder/default.rss", // The Hindu Business
     "https://feeds.bbci.co.uk/news/business/rss.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
   ],
   "entertainment": [
+    "https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms", // TOI Entertainment
+    "https://www.thehindu.com/entertainment/feeder/default.rss", // The Hindu Entertainment
     "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml",
   ],
   "health": [
+    "https://timesofindia.indiatimes.com/rssfeeds/3908999.cms", // TOI Health
     "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
     "https://feeds.bbci.co.uk/news/health/rss.xml",
   ],
   "science": [
+    "https://timesofindia.indiatimes.com/rssfeeds/39872987.cms", // TOI Science
     "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
     "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
   ],
   "world": [
+    "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", // TOI World
+    "https://www.thehindu.com/news/international/feeder/default.rss", // The Hindu World
     "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
     "https://feeds.bbci.co.uk/news/world/rss.xml",
+  ],
+  "india": [
+    "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms", // TOI India
+    "https://www.thehindu.com/news/national/feeder/default.rss", // The Hindu National
+    "https://indianexpress.com/feed/", // Indian Express
+    "https://www.ndtv.com/rss/india", // NDTV India
   ],
 };
 
@@ -50,9 +69,10 @@ interface NewsItem {
   pubDate: string;
   source: string;
   category: string;
+  isIndian: boolean;
 }
 
-function parseRSSItem(item: string, source: string, category: string): NewsItem | null {
+function parseRSSItem(item: string, source: string, category: string, isIndian: boolean): NewsItem | null {
   try {
     const titleMatch = item.match(/<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/s);
     const descMatch = item.match(/<description[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/description>/s);
@@ -78,6 +98,7 @@ function parseRSSItem(item: string, source: string, category: string): NewsItem 
       pubDate: pubDateMatch?.[1] || new Date().toISOString(),
       source,
       category,
+      isIndian,
     };
   } catch (e) {
     console.error("Error parsing RSS item:", e);
@@ -99,7 +120,16 @@ async function fetchRSSFeed(url: string, category: string): Promise<NewsItem[]> 
     }
 
     const xml = await response.text();
-    const source = url.includes("nytimes") ? "NYTimes" : 
+    
+    // Determine source and if it's Indian
+    const isIndian = url.includes("timesofindia") || url.includes("thehindu") || 
+                     url.includes("indianexpress") || url.includes("ndtv");
+    
+    const source = url.includes("timesofindia") ? "Times of India" :
+                   url.includes("thehindu") ? "The Hindu" :
+                   url.includes("indianexpress") ? "Indian Express" :
+                   url.includes("ndtv") ? "NDTV" :
+                   url.includes("nytimes") ? "NYTimes" : 
                    url.includes("bbc") ? "BBC" : 
                    url.includes("theverge") ? "The Verge" :
                    url.includes("techcrunch") ? "TechCrunch" :
@@ -108,8 +138,10 @@ async function fetchRSSFeed(url: string, category: string): Promise<NewsItem[]> 
     const items: NewsItem[] = [];
     const itemMatches = xml.match(/<item[^>]*>[\s\S]*?<\/item>/g) || [];
 
-    for (const itemXml of itemMatches.slice(0, 5)) {
-      const item = parseRSSItem(itemXml, source, category);
+    // Get more items from Indian sources
+    const limit = isIndian ? 8 : 4;
+    for (const itemXml of itemMatches.slice(0, limit)) {
+      const item = parseRSSItem(itemXml, source, category, isIndian);
       if (item) items.push(item);
     }
 
@@ -175,7 +207,7 @@ serve(async (req) => {
       console.log(`Authenticated user ${user.id} for fetching news`);
     }
 
-    const { category, limit = 5 } = await req.json();
+    const { category, limit = 5, focusIndian = true } = await req.json();
 
     let feeds: string[] = [];
     let categoryKey = category?.toLowerCase() || "";
@@ -192,12 +224,18 @@ serve(async (req) => {
       "science": "science",
       "world": "world",
       "international": "world",
+      "india": "india",
     };
 
     const mappedCategory = categoryMapping[categoryKey] || "world";
     feeds = RSS_FEEDS[mappedCategory] || RSS_FEEDS["world"];
+    
+    // Also add India feeds if focusing on Indian news
+    if (focusIndian && mappedCategory !== "india") {
+      feeds = [...(RSS_FEEDS["india"] || []).slice(0, 2), ...feeds];
+    }
 
-    console.log(`Fetching news for category: ${mappedCategory}`);
+    console.log(`Fetching news for category: ${mappedCategory}, focus Indian: ${focusIndian}`);
 
     const allNews: NewsItem[] = [];
     
@@ -206,12 +244,17 @@ serve(async (req) => {
       allNews.push(...items);
     }
 
-    // Sort by date and limit
+    // Sort by date, prioritizing Indian news
     const sortedNews = allNews
-      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+      .sort((a, b) => {
+        // Prioritize Indian news slightly
+        const indianBonus = (b.isIndian ? 1 : 0) - (a.isIndian ? 1 : 0);
+        if (indianBonus !== 0) return indianBonus * 0.3;
+        return new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime();
+      })
       .slice(0, limit);
 
-    console.log(`Found ${sortedNews.length} news items`);
+    console.log(`Found ${sortedNews.length} news items (${sortedNews.filter(n => n.isIndian).length} Indian)`);
 
     return new Response(JSON.stringify({ news: sortedNews }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
