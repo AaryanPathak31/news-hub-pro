@@ -358,6 +358,7 @@ function getVariedPlaceholderImage(category: string, title: string): string {
 /**
  * Create an article from RSS content without AI processing.
  * This is completely free and doesn't consume any AI credits.
+ * Cleans up messy RSS content to be readable.
  */
 function createRssOnlyArticle(
   newsItem: { title: string; description: string; source: string; link?: string },
@@ -365,37 +366,68 @@ function createRssOnlyArticle(
 ): { title: string; content: string; excerpt: string; seoKeywords: string[] } {
   const { title, description, source, link } = newsItem;
   
-  // Clean and format the description
-  const cleanDescription = (description || "")
-    .replace(/<[^>]*>/g, '') // Remove HTML tags
+  // Thoroughly clean the description from RSS artifacts
+  let cleanDescription = (description || "")
+    // Remove CDATA wrapper
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1')
+    // Remove HTML tags
+    .replace(/<[^>]*>/g, '')
+    // Decode HTML entities
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num)))
+    // Clean up whitespace
+    .replace(/\s+/g, ' ')
     .trim();
   
-  // Create excerpt (first 200 chars)
-  const excerpt = cleanDescription.substring(0, 200) + (cleanDescription.length > 200 ? '...' : '');
+  // If description is too short or just truncated, make it clearer
+  if (cleanDescription.endsWith('...') || cleanDescription.endsWith('…')) {
+    cleanDescription = cleanDescription.slice(0, -3).trim();
+    if (cleanDescription.length > 50) {
+      cleanDescription += '.';
+    }
+  }
   
-  // Build article content with source attribution
+  // Create a clean title (also clean CDATA)
+  const cleanTitle = title
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1')
+    .replace(/<[^>]*>/g, '')
+    .trim();
+  
+  // Create excerpt (first 200 chars, clean ending)
+  let excerpt = cleanDescription.substring(0, 200);
+  if (cleanDescription.length > 200) {
+    // Cut at last complete word
+    const lastSpace = excerpt.lastIndexOf(' ');
+    if (lastSpace > 150) {
+      excerpt = excerpt.substring(0, lastSpace);
+    }
+    excerpt += '...';
+  }
+  
+  // Build article content with proper formatting
   const content = `
-<p>${cleanDescription}</p>
+<p class="lead">${cleanDescription}</p>
 
 <hr />
 
-<p><em>This article was sourced from ${source}${link ? `. <a href="${link}" target="_blank" rel="noopener noreferrer">Read the original article</a>` : ''}.</em></p>
+<p><em>Source: ${source}${link ? ` — <a href="${link}" target="_blank" rel="noopener noreferrer">Read original article</a>` : ''}</em></p>
   `.trim();
   
-  // Extract keywords from title
-  const keywords = title
+  // Extract keywords from title (longer words only)
+  const keywords = cleanTitle
     .toLowerCase()
     .split(/\s+/)
-    .filter(word => word.length > 4)
+    .filter(word => word.length > 4 && !/^(about|their|there|these|those|would|could|should|being|having)$/.test(word))
     .slice(0, 5);
   
   return {
-    title: title,
+    title: cleanTitle,
     content: content,
     excerpt: excerpt,
     seoKeywords: [...categoryNames, ...keywords].filter(Boolean),
