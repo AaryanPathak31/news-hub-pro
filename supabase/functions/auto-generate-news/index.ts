@@ -46,11 +46,20 @@ serve(async (req) => {
     
     // Check user authentication and role
     if (!isAuthorized && authHeader) {
+      // Extract the JWT token from the Authorization header
+      const token = authHeader.replace(/^Bearer\s+/i, "");
+      
       const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
         global: { headers: { Authorization: authHeader } }
       });
 
-      const { data: { user }, error: authError } = await userSupabase.auth.getUser();
+      // Pass the token explicitly to getUser for edge function context
+      const { data: { user }, error: authError } = await userSupabase.auth.getUser(token);
+      
+      if (authError) {
+        console.log("User auth error:", authError.message);
+      }
+      
       if (user && !authError) {
         const { data: isAdmin } = await userSupabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
         const { data: isEditor } = await userSupabase.rpc('has_role', { _user_id: user.id, _role: 'editor' });
@@ -59,6 +68,8 @@ serve(async (req) => {
           isAuthorized = true;
           userId = user.id;
           console.log(`Authenticated user ${user.id} with role: ${isAdmin ? 'admin' : 'editor'}`);
+        } else {
+          console.log(`User ${user.id} lacks required role (admin or editor)`);
         }
       }
     }
