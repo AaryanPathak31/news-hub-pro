@@ -184,8 +184,8 @@ serve(async (req) => {
           .replace(/^-|-$/g, '')
           .substring(0, 100) + '-' + Date.now();
 
-        // Step 3: Generate image (skip if RSS-only to save credits)
-        let imageUrl = "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop";
+        // Step 3: Generate image (use varied placeholders for RSS-only mode)
+        let imageUrl = getVariedPlaceholderImage(primaryCategory, newsItem.title);
         
         if (!useRssOnlyFallback) {
           const imageResponse = await fetch(`${supabaseUrl}/functions/v1/generate-news-image`, {
@@ -214,6 +214,8 @@ serve(async (req) => {
           } else if (imageResponse.status === 402 || imageResponse.status === 429) {
             console.log("Image generation credits exhausted, using placeholder");
           }
+        } else {
+          console.log(`Using varied placeholder image for RSS-only article`);
         }
 
         // Step 4: Insert into database - ALL new articles are breaking news
@@ -269,6 +271,89 @@ serve(async (req) => {
     );
   }
 });
+
+/**
+ * Get a varied placeholder image based on category and title hash.
+ * Ensures different articles get different images.
+ */
+function getVariedPlaceholderImage(category: string, title: string): string {
+  // Curated Unsplash images for different news categories
+  const categoryImages: Record<string, string[]> = {
+    politics: [
+      "photo-1529107386315-e1a2ed48a620", // Capitol building
+      "photo-1555848962-6e79363ec58f", // Government building
+      "photo-1541872703-74c5e44368f9", // Voting
+      "photo-1568992687947-868a62a9f521", // Parliament
+      "photo-1577495508048-b635879837f1", // Flags
+    ],
+    business: [
+      "photo-1460925895917-afdab827c52f", // Business charts
+      "photo-1507003211169-0a1dd7228f2d", // Office
+      "photo-1454165804606-c3d57bc86b40", // Meeting
+      "photo-1611974789855-9c2a0a7236a3", // Stock market
+      "photo-1553729459-efe14ef6055d", // Finance
+    ],
+    technology: [
+      "photo-1518770660439-4636190af475", // Circuit board
+      "photo-1488590528505-98d2b5aba04b", // Computer
+      "photo-1526374965328-7f61d4dc18c5", // Code
+      "photo-1550751827-4bd374c3f58b", // Cybersecurity
+      "photo-1535378917042-10a22c95931a", // Tech devices
+    ],
+    sports: [
+      "photo-1461896836934- voices-of-the-city-1", // Stadium
+      "photo-1579952363873-27f3bade9f55", // Soccer ball
+      "photo-1517649763962-0c623066013b", // Athletics
+      "photo-1546519638-68e109498ffc", // Basketball
+      "photo-1574629810360-7efbbe195018", // Cricket
+    ],
+    entertainment: [
+      "photo-1489599849927-2ee91cede3ba", // Cinema
+      "photo-1598899134739-24c46f58b8c0", // Music
+      "photo-1514525253161-7a46d19cd819", // Concert
+      "photo-1485846234645-a62644f84728", // Film
+      "photo-1603190287605-e6ade32fa852", // Theater
+    ],
+    health: [
+      "photo-1505751172876-fa1923c5c528", // Medical
+      "photo-1576091160399-112ba8d25d1d", // Doctor
+      "photo-1559757175-0eb30cd8c063", // Healthcare
+      "photo-1532938911079-1b06ac7ceec7", // Hospital
+      "photo-1571019613454-1cb2f99b2d8b", // Fitness
+    ],
+    world: [
+      "photo-1451187580459-43490279c0fa", // Globe
+      "photo-1526778548025-fa2f459cd5c1", // World map
+      "photo-1521295121783-8a321d551ad2", // International
+      "photo-1488085061387-422e29b40080", // Travel
+      "photo-1502920917128-1aa500764c93", // Cityscape
+    ],
+    general: [
+      "photo-1504711434969-e33886168f5c", // Newspaper
+      "photo-1495020689067-958852a7765e", // News
+      "photo-1586339949216-35c2747cc36d", // Headlines
+      "photo-1559526324-593bc073d938", // Media
+      "photo-1566378246598-5b11a0d486cc", // Reading
+    ],
+  };
+
+  // Get images for the category (fallback to general)
+  const categoryKey = category.toLowerCase();
+  const images = categoryImages[categoryKey] || categoryImages.general;
+  
+  // Create a simple hash from title to get consistent but varied selection
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = ((hash << 5) - hash) + title.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  
+  // Select image based on hash
+  const index = Math.abs(hash) % images.length;
+  const imageId = images[index];
+  
+  return `https://images.unsplash.com/${imageId}?w=1200&h=630&fit=crop`;
+}
 
 /**
  * Create an article from RSS content without AI processing.
