@@ -7,7 +7,8 @@ export interface DBArticle {
   title: string;
   slug: string;
   excerpt: string | null;
-  content: string;
+  // NOTE: list queries intentionally omit heavy fields like `content`
+  content?: string;
   featured_image: string | null;
   category_id: string | null;
   author_id: string | null;
@@ -53,7 +54,22 @@ export const useArticles = (options?: { status?: 'draft' | 'published' | 'archiv
       let query = supabase
         .from('articles')
         .select(`
-          *,
+          id,
+          title,
+          slug,
+          excerpt,
+          featured_image,
+          category_id,
+          author_id,
+          status,
+          is_breaking,
+          is_featured,
+          tags,
+          read_time,
+          view_count,
+          published_at,
+          created_at,
+          updated_at,
           category:categories(id, name, slug)
         `)
         .order('created_at', { ascending: false });
@@ -98,7 +114,22 @@ export const usePublishedArticles = () => {
       const { data, error } = await supabase
         .from('articles')
         .select(`
-          *,
+          id,
+          title,
+          slug,
+          excerpt,
+          featured_image,
+          category_id,
+          author_id,
+          status,
+          is_breaking,
+          is_featured,
+          tags,
+          read_time,
+          view_count,
+          published_at,
+          created_at,
+          updated_at,
           category:categories(id, name, slug)
         `)
         .eq('status', 'published')

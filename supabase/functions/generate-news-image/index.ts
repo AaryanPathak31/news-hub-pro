@@ -75,38 +75,62 @@ serve(async (req) => {
     console.log(`Generating image for: ${articleSlug}`);
     console.log(`Prompt: ${prompt}`);
 
-    // Use Lovable AI with correct image generation model
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [
-          {
-            role: "user",
-            content: `Generate a professional, high-quality news article header image for this topic: ${prompt}. 
-            
+    const fallback = () => {
+      const keywords = encodeURIComponent(String(prompt || '').split(' ').slice(0, 3).join(' '));
+      console.log(`Using Unsplash fallback with keywords: ${keywords}`);
+      return new Response(
+        JSON.stringify({
+          imageUrl: `https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop`,
+          placeholder: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    };
+
+    // Use Lovable AI with correct image generation model (with timeout)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+
+    let response: Response;
+    try {
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash-image-preview",
+          messages: [
+            {
+              role: "user",
+              content: `Generate a professional, high-quality news article header image for this topic: ${prompt}.
+
 Requirements:
 - Photojournalistic style
 - High quality, suitable for a news website header
 - Visually compelling and relevant to the topic
 - No text overlays
-- 16:9 aspect ratio composition`
-          }
-        ],
-        modalities: ["image", "text"]
-      }),
-    });
+- 16:9 aspect ratio composition`,
+            },
+          ],
+          modalities: ["image", "text"],
+        }),
+      });
+    } catch (e) {
+      console.error("Image generation request failed (timeout/network):", e);
+      return fallback();
+    } finally {
+      clearTimeout(timeout);
+    }
 
     console.log(`Response status: ${response.status}`);
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`API error: ${errorText}`);
-      
+
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
@@ -119,61 +143,32 @@ Requirements:
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      
-      // Use curated Unsplash photos based on topic keywords
-      const keywords = encodeURIComponent(prompt.split(' ').slice(0, 3).join(' '));
-      console.log(`Using Unsplash fallback with keywords: ${keywords}`);
-      
-      return new Response(
-        JSON.stringify({ 
-          imageUrl: `https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop`,
-          placeholder: true 
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+
+      return fallback();
     }
 
     const data = await response.json();
     console.log("API response received");
-    
-    // Check for images array in the response (new format)
+
+    // Preferred: hosted image URL from the model output
     const images = data.choices?.[0]?.message?.images;
-    if (images && images.length > 0) {
-      const imageUrl = images[0]?.image_url?.url;
-      if (imageUrl) {
-        console.log("Successfully extracted image from API response");
-        return new Response(
-          JSON.stringify({ imageUrl }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
-    
-    // Check if response contains image data in content (legacy format)
-    const content = data.choices?.[0]?.message?.content;
-    
-    if (content && typeof content === 'string' && content.includes("data:image")) {
-      const imageMatch = content.match(/data:image\/[^;]+;base64,[^\s"]+/);
-      if (imageMatch) {
-        console.log("Successfully extracted base64 image from content");
-        return new Response(
-          JSON.stringify({ imageUrl: imageMatch[0] }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+    const rawUrl = images?.[0]?.image_url?.url;
+
+    // Never store base64/data URLs in the DB (they are huge and can break page loads)
+    if (rawUrl && typeof rawUrl === "string" && rawUrl.startsWith("data:image")) {
+      console.log("Model returned a data URL; using fallback instead");
+      return fallback();
     }
 
-    // Fallback to topic-based Unsplash image
-    const keywords = encodeURIComponent(prompt.split(' ').slice(0, 3).join(' '));
-    console.log(`No image in response, using Unsplash fallback with: ${keywords}`);
+    if (rawUrl && typeof rawUrl === "string") {
+      console.log("Successfully extracted image URL from API response");
+      return new Response(JSON.stringify({ imageUrl: rawUrl }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    return new Response(
-      JSON.stringify({ 
-        imageUrl: `https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop`,
-        placeholder: true 
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    // If no image URL was returned, use fallback
+    return fallback();
   } catch (error) {
     console.error("Error in generate-news-image function:", error);
     
