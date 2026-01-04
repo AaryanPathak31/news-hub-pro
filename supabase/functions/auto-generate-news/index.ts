@@ -92,13 +92,13 @@ serve(async (req) => {
     
     console.log(`Auto-generating ${count} article(s) for categories: ${names.join(', ')} in ${language}`);
 
-    // First, demote existing breaking news (older than 20 minutes)
-    const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    // First, demote existing breaking news (older than 15 minutes)
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { error: demoteError } = await supabase
       .from("articles")
       .update({ is_breaking: false })
       .eq("is_breaking", true)
-      .lt("published_at", twentyMinutesAgo);
+      .lt("published_at", fifteenMinutesAgo);
     
     if (demoteError) {
       console.error("Error demoting old breaking news:", demoteError);
