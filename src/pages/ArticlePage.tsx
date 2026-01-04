@@ -50,11 +50,15 @@ const toArticle = (dbArticle: DBArticle): Article => ({
 const ArticlePage = () => {
   const { category, slug } = useParams<{ category: string; slug: string }>();
   const [translatedLanguage, setTranslatedLanguage] = useState<string>('en');
+  const [translatedContent, setTranslatedContent] = useState<string>('');
+  const [translatedTitle, setTranslatedTitle] = useState<string>('');
   
   const { data: dbArticle, isLoading } = useArticleBySlug(slug || '');
   const { data: allArticles } = usePublishedArticles();
 
   const handleTranslation = (content: string, title: string, language: string) => {
+    setTranslatedContent(content);
+    setTranslatedTitle(title);
     setTranslatedLanguage(language);
   };
 
@@ -133,7 +137,7 @@ const ArticlePage = () => {
                   className="font-serif font-bold text-3xl md:text-4xl lg:text-5xl leading-tight mb-4"
                   itemProp="headline"
                 >
-                  {article.title}
+                  {translatedTitle || article.title}
                 </h1>
                 
                 <p className="text-xl text-muted-foreground leading-relaxed mb-6" itemProp="description">
@@ -199,7 +203,7 @@ const ArticlePage = () => {
                 className="article-body font-sans"
                 itemProp="articleBody"
                 lang={translatedLanguage}
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content, sanitizeConfig) }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(translatedContent || article.content, sanitizeConfig) }}
               />
 
               {/* In-article Ad */}
