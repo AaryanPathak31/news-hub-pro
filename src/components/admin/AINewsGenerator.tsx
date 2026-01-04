@@ -101,6 +101,11 @@ export const AINewsGenerator = () => {
     setGenerationLog(prev => [...prev, `📰 ${articleCount} articles per category as BREAKING NEWS`]);
     setGenerationLog(prev => [...prev, `🇮🇳 Prioritizing Indian news sources`]);
 
+    let successCount = 0;
+    let failureCount = 0;
+    const failures: string[] = [];
+    let authFailed = false;
+
     for (const category of categories) {
       try {
         setGenerationLog(prev => [...prev, `\n📁 Processing ${category.name}...`]);
@@ -114,26 +119,56 @@ export const AINewsGenerator = () => {
         });
 
         if (error) {
+          failureCount++;
+          failures.push(category.name);
           setGenerationLog(prev => [...prev, `✗ ${category.name}: ${error.message}`]);
-        } else if (data.success) {
+          
+          // Check for auth errors - stop early if unauthorized
+          if (error.message?.includes("401") || error.message?.includes("Unauthorized") || error.message?.includes("403")) {
+            authFailed = true;
+            setGenerationLog(prev => [...prev, `\n⚠️ Authentication failed. Please ensure you're logged in with an Editor or Admin account.`]);
+            break;
+          }
+        } else if (data?.success) {
+          successCount++;
           setGenerationLog(prev => [...prev, `✓ ${category.name}: ${data.message}`]);
           if (data.articles?.length > 0) {
             data.articles.forEach((a: { title: string }) => {
               setGenerationLog(prev => [...prev, `  🔴 ${a.title}`]);
             });
           }
+        } else {
+          failureCount++;
+          failures.push(category.name);
+          const msg = data?.error || data?.message || "Unknown error";
+          setGenerationLog(prev => [...prev, `✗ ${category.name}: ${msg}`]);
         }
 
         // Delay between categories to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 5000));
       } catch (error: unknown) {
+        failureCount++;
+        failures.push(category.name);
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         setGenerationLog(prev => [...prev, `✗ ${category.name}: ${errorMessage}`]);
       }
     }
 
-    setGenerationLog(prev => [...prev, "\n✓ Automated generation complete! All articles published as BREAKING NEWS."]);
-    toast.success("Automated generation complete!");
+    // Show accurate summary
+    if (authFailed) {
+      setGenerationLog(prev => [...prev, `\n⛔ Generation stopped due to authentication error.`]);
+      toast.error("Authentication failed. Please re-login or check your account role.");
+    } else if (failureCount === 0 && successCount > 0) {
+      setGenerationLog(prev => [...prev, `\n✓ Completed: ${successCount} categories succeeded. All articles published as BREAKING NEWS.`]);
+      toast.success(`Generated articles for ${successCount} categories!`);
+    } else if (successCount > 0) {
+      setGenerationLog(prev => [...prev, `\n⚠️ Completed: ${successCount} succeeded, ${failureCount} failed (${failures.join(", ")})`]);
+      toast.warning(`Partial success: ${successCount} categories succeeded, ${failureCount} failed`);
+    } else {
+      setGenerationLog(prev => [...prev, `\n✗ Failed: All ${failureCount} categories failed.`]);
+      toast.error("All categories failed to generate.");
+    }
+    
     setIsGenerating(false);
   };
 

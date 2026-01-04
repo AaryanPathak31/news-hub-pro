@@ -29,12 +29,16 @@ serve(async (req) => {
     const isServiceRole = authHeader.includes(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "");
     
     if (!isServiceRole) {
+      // Extract the JWT token from the Authorization header
+      const token = authHeader.replace(/^Bearer\s+/i, "");
+      
       // Verify user authentication
       const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
         global: { headers: { Authorization: authHeader } }
       });
 
-      const { data: { user }, error: authError } = await userSupabase.auth.getUser();
+      // Pass the token explicitly to getUser for edge function context
+      const { data: { user }, error: authError } = await userSupabase.auth.getUser(token);
       if (authError || !user) {
         console.error("Authentication failed:", authError?.message);
         return new Response(
