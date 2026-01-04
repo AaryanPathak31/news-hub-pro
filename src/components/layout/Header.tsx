@@ -32,9 +32,6 @@ export const Header = () => {
           <div className="flex items-center gap-2 ml-auto">
             <LanguageSelector />
             <ThemeToggle />
-            <div className="h-4 w-px bg-primary-foreground/20 hidden sm:block" />
-            <Link to="/subscribe" className="hover:underline hidden sm:block text-xs">Subscribe</Link>
-            <Link to="/newsletter" className="hover:underline hidden sm:block text-xs">Newsletter</Link>
             <div className="h-4 w-px bg-primary-foreground/20" />
             {isEditor ? (
               <Link to="/admin" className="hover:underline flex items-center gap-1 text-xs">
