@@ -5,20 +5,36 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const languageInstructions: Record<string, string> = {
+  en: "Write the article in English.",
+  es: "Escribe el artículo en español (Spanish).",
+  fr: "Écrivez l'article en français (French).",
+  de: "Schreiben Sie den Artikel auf Deutsch (German).",
+  it: "Scrivi l'articolo in italiano (Italian).",
+  pt: "Escreva o artigo em português (Portuguese).",
+  zh: "用中文撰写文章 (Chinese).",
+  ja: "記事を日本語で書いてください (Japanese).",
+  ko: "기사를 한국어로 작성하세요 (Korean).",
+  ar: "اكتب المقال بالعربية (Arabic).",
+  hi: "लेख हिंदी में लिखें (Hindi).",
+  ru: "Напишите статью на русском языке (Russian).",
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { title, description, source } = await req.json();
+    const { title, description, source, language = "en" } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    console.log(`Rewriting article: ${title}`);
+    const langInstruction = languageInstructions[language] || languageInstructions.en;
+    console.log(`Rewriting article: ${title} in language: ${language}`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -40,12 +56,13 @@ IMPORTANT RULES:
 4. The article should be 300-500 words
 5. Include relevant context and background information
 6. Write in an objective, journalistic tone
+7. ${langInstruction}
 
 Respond with a JSON object containing:
 - "title": A new, catchy headline (different from original)
 - "content": The full rewritten article in HTML format with <p> tags for paragraphs
 - "excerpt": A 2-3 sentence summary
-- "imagePrompt": A detailed prompt to generate a relevant image for this article (describe scene, style, colors)`
+- "imagePrompt": A detailed prompt to generate a relevant image for this article (describe scene, style, colors - always in English for image generation)`
           },
           {
             role: "user",
@@ -57,10 +74,9 @@ Original Summary: ${description}
 
 Source: ${source}
 
-Create a completely original article based on this news.`
+Create a completely original article based on this news. ${langInstruction}`
           }
         ],
-        temperature: 0.8,
       }),
     });
 

@@ -12,22 +12,27 @@ serve(async (req) => {
   }
 
   try {
-    const { categoryId, categoryName, count = 1 } = await req.json();
+    const { categoryIds, categoryNames, count = 1, language = "en" } = await req.json();
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log(`Auto-generating ${count} article(s) for category: ${categoryName}`);
+    // Support both single category (legacy) and multiple categories
+    const categories = categoryIds || [];
+    const names = categoryNames || [];
+    
+    console.log(`Auto-generating ${count} article(s) for categories: ${names.join(', ')} in ${language}`);
 
-    // Step 1: Fetch news from RSS feeds
+    // Step 1: Fetch news from RSS feeds - use first category name for news fetching
+    const primaryCategory = names[0] || "general";
     const fetchNewsResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-news`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${supabaseKey}`,
       },
-      body: JSON.stringify({ category: categoryName, limit: count }),
+      body: JSON.stringify({ category: primaryCategory, limit: count }),
     });
 
     if (!fetchNewsResponse.ok) {
@@ -60,6 +65,7 @@ serve(async (req) => {
             title: newsItem.title,
             description: newsItem.description,
             source: newsItem.source,
+            language: language,
           }),
         });
 
@@ -96,9 +102,11 @@ serve(async (req) => {
         if (imageResponse.ok) {
           const imageData = await imageResponse.json();
           imageUrl = imageData.imageUrl || imageUrl;
+          console.log(`Image generated: ${imageData.placeholder ? 'placeholder' : 'AI generated'}`);
         }
 
-        // Step 4: Insert into database
+        // Step 4: Insert into database with first category (for main category_id)
+        // Tags will include all category names
         const { data: article, error: insertError } = await supabase
           .from("articles")
           .insert({
@@ -107,13 +115,13 @@ serve(async (req) => {
             content: rewritten.content,
             excerpt: rewritten.excerpt,
             featured_image: imageUrl,
-            category_id: categoryId,
+            category_id: categories[0], // Primary category
             status: "published",
             published_at: new Date().toISOString(),
             is_breaking: false,
             is_featured: false,
             read_time: Math.ceil(rewritten.content.split(' ').length / 200),
-            tags: [categoryName, "AI Generated"],
+            tags: names.filter((n: string) => n), // Only category names, no "AI Generated" tag
           })
           .select()
           .single();
