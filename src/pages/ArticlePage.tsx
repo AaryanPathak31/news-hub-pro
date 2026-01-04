@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import { SEOHead } from '@/components/SEOHead';
 import { Layout } from '@/components/layout/Layout';
 import { ArticleCard } from '@/components/news/ArticleCard';
@@ -13,6 +14,13 @@ import { getCategoryInfo, Article, Category } from '@/types/news';
 import { Clock, Calendar, RefreshCw, User } from 'lucide-react';
 import { format } from 'date-fns';
 import NotFound from './NotFound';
+
+// Configure DOMPurify to allow safe HTML tags only
+const sanitizeConfig = {
+  ALLOWED_TAGS: ['p', 'strong', 'em', 'b', 'i', 'u', 'a', 'img', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'br', 'span', 'div'],
+  ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'target', 'rel'],
+  ALLOW_DATA_ATTR: false,
+};
 
 // Helper to convert DB article to frontend Article type
 const toArticle = (dbArticle: DBArticle): Article => ({
@@ -174,7 +182,7 @@ const ArticlePage = () => {
               <div 
                 className="article-body font-sans"
                 itemProp="articleBody"
-                dangerouslySetInnerHTML={{ __html: article.content }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content, sanitizeConfig) }}
               />
 
               {/* In-article Ad */}

@@ -12,11 +12,55 @@ serve(async (req) => {
   }
 
   try {
-    const { categoryIds, categoryNames, count = 1, language = "en" } = await req.json();
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    // Authenticate the user
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error("Missing authorization header");
+      return new Response(
+        JSON.stringify({ error: "Missing authorization" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Create client with user's auth token for verification
+    const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    const { data: { user }, error: authError } = await userSupabase.auth.getUser();
+    if (authError || !user) {
+      console.error("Authentication failed:", authError?.message);
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check user has editor or admin role
+    const { data: roleData, error: roleError } = await userSupabase
+      .rpc('has_role', { _user_id: user.id, _role: 'admin' });
+    
+    const { data: editorData } = await userSupabase
+      .rpc('has_role', { _user_id: user.id, _role: 'editor' });
+
+    if (roleError || (!roleData && !editorData)) {
+      console.error("User lacks required role:", user.id);
+      return new Response(
+        JSON.stringify({ error: "Forbidden: Editor or Admin role required" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`Authenticated user ${user.id} with role: ${roleData ? 'admin' : 'editor'}`);
+
+    // Use service role client for database operations
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { categoryIds, categoryNames, count = 1, language = "en" } = await req.json();
 
     // Support both single category (legacy) and multiple categories
     const categories = categoryIds || [];
@@ -30,7 +74,7 @@ serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${supabaseKey}`,
+        "Authorization": `Bearer ${supabaseServiceKey}`,
       },
       body: JSON.stringify({ category: primaryCategory, limit: count }),
     });
@@ -59,7 +103,7 @@ serve(async (req) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseKey}`,
+            "Authorization": `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify({
             title: newsItem.title,
@@ -89,7 +133,7 @@ serve(async (req) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseKey}`,
+            "Authorization": `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify({
             prompt: rewritten.imagePrompt || rewritten.title,
@@ -116,6 +160,7 @@ serve(async (req) => {
             excerpt: rewritten.excerpt,
             featured_image: imageUrl,
             category_id: categories[0], // Primary category
+            author_id: user.id, // Set the authenticated user as author
             status: "published",
             published_at: new Date().toISOString(),
             is_breaking: false,
