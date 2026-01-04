@@ -84,6 +84,26 @@ async function attachAuthorProfiles(articles: any[]) {
   }
 }
 
+// Light select for list views (excludes heavy fields like featured_image)
+const LIST_SELECT = `
+  id,
+  title,
+  slug,
+  excerpt,
+  category_id,
+  author_id,
+  status,
+  is_breaking,
+  is_featured,
+  tags,
+  read_time,
+  view_count,
+  published_at,
+  created_at,
+  updated_at,
+  category:categories(id, name, slug)
+`;
+
 export const useArticles = (options?: { status?: 'draft' | 'published' | 'archived'; category?: string; limit?: number }) => {
   return useQuery({
     queryKey: ['articles', options],
@@ -92,27 +112,7 @@ export const useArticles = (options?: { status?: 'draft' | 'published' | 'archiv
     queryFn: async () => {
       let query = supabase
         .from('articles')
-        .select(
-          `
-          id,
-          title,
-          slug,
-          excerpt,
-          featured_image,
-          category_id,
-          author_id,
-          status,
-          is_breaking,
-          is_featured,
-          tags,
-          read_time,
-          view_count,
-          published_at,
-          created_at,
-          updated_at,
-          category:categories(id, name, slug)
-        `
-        )
+        .select(LIST_SELECT)
         .order('created_at', { ascending: false });
 
       if (options?.status) {
@@ -129,6 +129,7 @@ export const useArticles = (options?: { status?: 'draft' | 'published' | 'archiv
 
       return data?.map((article) => ({
         ...article,
+        featured_image: null, // Not fetched in list view
         author_profile: article.author_id ? profiles[article.author_id] || null : null,
       })) as DBArticle[];
     },
@@ -147,27 +148,7 @@ export const usePublishedArticles = () => {
       const { data, error } = await withTimeout(
         supabase
           .from('articles')
-          .select(
-            `
-          id,
-          title,
-          slug,
-          excerpt,
-          featured_image,
-          category_id,
-          author_id,
-          status,
-          is_breaking,
-          is_featured,
-          tags,
-          read_time,
-          view_count,
-          published_at,
-          created_at,
-          updated_at,
-          category:categories(id, name, slug)
-        `
-          )
+          .select(LIST_SELECT)
           .eq('status', 'published')
           .order('published_at', { ascending: false }),
         REQUEST_TIMEOUT_MS,
@@ -179,6 +160,7 @@ export const usePublishedArticles = () => {
       const { profiles } = await attachAuthorProfiles(data ?? []);
       const result = data?.map((article) => ({
         ...article,
+        featured_image: null, // Not fetched in list view
         author_profile: article.author_id ? profiles[article.author_id] || null : null,
       })) as DBArticle[];
 
