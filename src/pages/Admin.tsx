@@ -24,10 +24,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit2, Trash2, Eye, LogOut, FileText, Send, Archive, BarChart3, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, LogOut, FileText, Send, Archive, BarChart3, Users, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import AnalyticsDashboard from '@/components/admin/AnalyticsDashboard';
 import UserManagement from '@/components/admin/UserManagement';
+import { AINewsGenerator } from '@/components/admin/AINewsGenerator';
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -182,10 +183,14 @@ const Admin = () => {
       <main className="container py-8">
         {/* Main Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-flex">
+          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-flex">
             <TabsTrigger value="articles" className="gap-2">
               <FileText className="h-4 w-4" />
               Articles
+            </TabsTrigger>
+            <TabsTrigger value="ai-generator" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              AI Generator
             </TabsTrigger>
             <TabsTrigger value="analytics" className="gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -282,6 +287,11 @@ const Admin = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* AI Generator Tab */}
+          <TabsContent value="ai-generator">
+            <AINewsGenerator />
           </TabsContent>
 
           {/* Analytics Tab */}
