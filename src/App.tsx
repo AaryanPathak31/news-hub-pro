@@ -18,6 +18,7 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// Main App component
 const App = () => (
   <HelmetProvider>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>

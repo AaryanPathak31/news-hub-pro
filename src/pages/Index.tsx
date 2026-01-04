@@ -18,28 +18,86 @@ import {
 } from '@/lib/seo';
 import { Article } from '@/types/news';
 
+// Category-specific placeholder images for visual variety
+const CATEGORY_IMAGES: Record<string, string[]> = {
+  politics: [
+    'https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1555848962-6e79363ec58f?w=1200&h=630&fit=crop',
+  ],
+  business: [
+    'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&h=630&fit=crop',
+  ],
+  technology: [
+    'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&h=630&fit=crop',
+  ],
+  sports: [
+    'https://images.unsplash.com/photo-1461896836934- voices?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=1200&h=630&fit=crop',
+  ],
+  entertainment: [
+    'https://images.unsplash.com/photo-1603190287605-e6ade32fa852?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200&h=630&fit=crop',
+  ],
+  health: [
+    'https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1200&h=630&fit=crop',
+  ],
+  world: [
+    'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1589519160732-57fc498494f8?w=1200&h=630&fit=crop',
+  ],
+  default: [
+    'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=1200&h=630&fit=crop',
+    'https://images.unsplash.com/photo-1586339949916-3e9457bef6d3?w=1200&h=630&fit=crop',
+  ],
+};
+
+// Generate a deterministic index from title for consistent image selection
+const getImageForArticle = (category: string, title: string): string => {
+  const images = CATEGORY_IMAGES[category] || CATEGORY_IMAGES.default;
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = ((hash << 5) - hash) + title.charCodeAt(i);
+    hash |= 0;
+  }
+  return images[Math.abs(hash) % images.length];
+};
+
 // Helper to convert DB article to frontend Article type
-const toArticle = (dbArticle: DBArticle): Article => ({
-  id: dbArticle.id,
-  slug: dbArticle.slug,
-  title: dbArticle.title,
-  excerpt: dbArticle.excerpt || '',
-  content: dbArticle.content,
-  featuredImage: dbArticle.featured_image || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&h=630&fit=crop',
-  category: (dbArticle.category?.slug || 'world') as Article['category'],
-  tags: dbArticle.tags || [],
-  author: {
-    id: dbArticle.author_id || '1',
-    name: dbArticle.author_profile?.full_name || 'Staff Writer',
-    role: 'Reporter',
-  },
-  publishedAt: dbArticle.published_at || dbArticle.created_at,
-  updatedAt: dbArticle.updated_at,
-  readingTime: dbArticle.read_time,
-  isBreaking: dbArticle.is_breaking,
-  isFeatured: dbArticle.is_featured,
-  views: dbArticle.view_count,
-});
+const toArticle = (dbArticle: DBArticle): Article => {
+  const category = dbArticle.category?.slug || 'world';
+  return {
+    id: dbArticle.id,
+    slug: dbArticle.slug,
+    title: dbArticle.title,
+    excerpt: dbArticle.excerpt || '',
+    content: dbArticle.content,
+    featuredImage: dbArticle.featured_image || getImageForArticle(category, dbArticle.title),
+    category: category as Article['category'],
+    tags: dbArticle.tags || [],
+    author: {
+      id: dbArticle.author_id || '1',
+      name: dbArticle.author_profile?.full_name || 'Staff Writer',
+      role: 'Reporter',
+    },
+    publishedAt: dbArticle.published_at || dbArticle.created_at,
+    updatedAt: dbArticle.updated_at,
+    readingTime: dbArticle.read_time,
+    isBreaking: dbArticle.is_breaking,
+    isFeatured: dbArticle.is_featured,
+    views: dbArticle.view_count,
+  };
+};
 
 const Index = () => {
   const seo = generateHomeSEO();
