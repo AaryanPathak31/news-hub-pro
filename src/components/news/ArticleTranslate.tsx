@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Languages } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ArticleTranslateProps {
   content: string;
@@ -40,17 +41,29 @@ export const ArticleTranslate = ({ content, title, onTranslated }: ArticleTransl
     setIsTranslating(true);
     
     try {
-      // Use browser's built-in translation API or a simple approach
-      // For now, we'll show a message that this would use a translation service
       const lang = LANGUAGES.find(l => l.code === selectedLanguage);
       
-      // Simulate translation (in production, you'd call a translation API)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { data, error } = await supabase.functions.invoke('translate-article', {
+        body: {
+          title,
+          content,
+          targetLanguage: selectedLanguage,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
       
-      toast.success(`Article displayed in ${lang?.name || selectedLanguage}`);
+      toast.success(`Article translated to ${lang?.name || selectedLanguage}`);
       setCurrentLanguage(selectedLanguage);
-      onTranslated(content, title, selectedLanguage);
+      onTranslated(data.translatedContent, data.translatedTitle, selectedLanguage);
     } catch (error) {
+      console.error('Translation error:', error);
       toast.error('Translation failed. Please try again.');
     } finally {
       setIsTranslating(false);

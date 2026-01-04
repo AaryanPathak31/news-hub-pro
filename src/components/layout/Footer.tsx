@@ -1,10 +1,48 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Facebook, Twitter, Linkedin, Youtube, Mail } from 'lucide-react';
+import { Facebook, Twitter, Linkedin, Youtube, Mail, Loader2 } from 'lucide-react';
 import { CATEGORIES } from '@/types/news';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export const Footer = () => {
   const currentYear = new Date().getFullYear();
   const mainCategories = CATEGORIES.filter(c => c.slug !== 'breaking');
+  const [email, setEmail] = useState('');
+  const [isSubscribing, setIsSubscribing] = useState(false);
+
+  const handleNewsletterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email || !email.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    setIsSubscribing(true);
+    
+    try {
+      const { error } = await supabase
+        .from('newsletter_subscribers')
+        .insert({ email: email.toLowerCase().trim() });
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.info('You are already subscribed to our newsletter!');
+        } else {
+          throw error;
+        }
+      } else {
+        toast.success('Thank you for subscribing! You will receive our daily newsletter every morning.');
+        setEmail('');
+      }
+    } catch (error) {
+      console.error('Newsletter subscription error:', error);
+      toast.error('Failed to subscribe. Please try again.');
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
 
   return (
     <footer className="bg-primary text-primary-foreground mt-16" role="contentinfo">
@@ -59,31 +97,37 @@ export const Footer = () => {
             <ul className="space-y-2 text-sm">
               <li><Link to="/about" className="text-primary-foreground/80 hover:text-primary-foreground transition-colors">About Us</Link></li>
               <li><Link to="/contact" className="text-primary-foreground/80 hover:text-primary-foreground transition-colors">Contact</Link></li>
-              <li><Link to="/careers" className="text-primary-foreground/80 hover:text-primary-foreground transition-colors">Careers</Link></li>
               <li><Link to="/advertise" className="text-primary-foreground/80 hover:text-primary-foreground transition-colors">Advertise</Link></li>
-              <li><Link to="/press" className="text-primary-foreground/80 hover:text-primary-foreground transition-colors">Press</Link></li>
             </ul>
           </div>
 
           {/* Newsletter */}
           <div>
-            <h3 className="font-semibold text-lg mb-4">Stay Informed</h3>
+            <h3 className="font-semibold text-lg mb-4">Daily Newsletter</h3>
             <p className="text-sm text-primary-foreground/80 mb-4">
-              Get the latest news delivered to your inbox every morning.
+              Get the latest news delivered to your inbox every morning at 7 AM.
             </p>
-            <form className="flex gap-2">
+            <form onSubmit={handleNewsletterSubmit} className="flex gap-2">
               <input
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="Your email"
                 className="flex-1 px-3 py-2 text-sm rounded-md bg-primary-foreground/10 border border-primary-foreground/20 text-primary-foreground placeholder:text-primary-foreground/50 focus:outline-none focus:ring-2 focus:ring-destructive"
                 aria-label="Email for newsletter"
+                disabled={isSubscribing}
               />
               <button 
                 type="submit" 
-                className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors"
+                className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors disabled:opacity-50"
                 aria-label="Subscribe to newsletter"
+                disabled={isSubscribing}
               >
-                <Mail className="h-4 w-4" />
+                {isSubscribing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
               </button>
             </form>
           </div>
