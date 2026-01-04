@@ -16,52 +16,39 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
-    // Authenticate the user
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      console.error("Missing authorization header");
-      return new Response(
-        JSON.stringify({ error: "Missing authorization" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check if this is a service role call (internal/cron)
-    const isServiceRole = authHeader.includes(supabaseServiceKey);
     let userId: string | null = null;
+    let isAuthorized = false;
 
-    if (!isServiceRole) {
-      // Create client with user's auth token for verification
+    // Check if this is a service role call (cron job / internal)
+    if (authHeader && authHeader.includes(supabaseServiceKey)) {
+      isAuthorized = true;
+      console.log("Service role authorization - cron job or internal call");
+    } else if (authHeader) {
+      // Verify user authentication and role
       const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
         global: { headers: { Authorization: authHeader } }
       });
 
       const { data: { user }, error: authError } = await userSupabase.auth.getUser();
-      if (authError || !user) {
-        console.error("Authentication failed:", authError?.message);
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (user && !authError) {
+        const { data: isAdmin } = await userSupabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
+        const { data: isEditor } = await userSupabase.rpc('has_role', { _user_id: user.id, _role: 'editor' });
+
+        if (isAdmin || isEditor) {
+          isAuthorized = true;
+          userId = user.id;
+          console.log(`Authenticated user ${user.id} with role: ${isAdmin ? 'admin' : 'editor'}`);
+        }
       }
+    }
 
-      // Check user has editor or admin role
-      const { data: roleData, error: roleError } = await userSupabase
-        .rpc('has_role', { _user_id: user.id, _role: 'admin' });
-      
-      const { data: editorData } = await userSupabase
-        .rpc('has_role', { _user_id: user.id, _role: 'editor' });
-
-      if (roleError || (!roleData && !editorData)) {
-        console.error("User lacks required role:", user.id);
-        return new Response(
-          JSON.stringify({ error: "Forbidden: Editor or Admin role required" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      userId = user.id;
-      console.log(`Authenticated user ${user.id} with role: ${roleData ? 'admin' : 'editor'}`);
+    if (!isAuthorized) {
+      console.error("Unauthorized access attempt");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized: Editor/Admin role or service key required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Use service role client for database operations
