@@ -44,7 +44,16 @@ const CategoryPage = () => {
   }
 
   const categoryInfo = getCategoryInfo(category as Category);
-  const articles = allArticles?.map(toArticle).filter(a => a.category === category) || [];
+  
+  // Handle "breaking" as a special case - fetch articles with is_breaking = true
+  // For other categories, filter by category slug
+  const articles = allArticles?.map(toArticle).filter(a => {
+    if (category === 'breaking') {
+      return a.isBreaking === true;
+    }
+    return a.category === category;
+  }).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()) || [];
+  
   const trendingArticles = allArticles?.map(toArticle)
     .sort((a, b) => (b.views || 0) - (a.views || 0))
     .slice(0, 5) || [];
